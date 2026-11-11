@@ -1,0 +1,590 @@
+// soleX demo data model.
+// The Mandate is the centre of the model: every unit that soleX may sell, every
+// booking, and every commission line resolves back to the mandate whose
+// commercial terms govern it. Money is stored as whole rupees (Int), rates as
+// basis points (Int; 100 bps = 1%).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  MANAGEMENT
+  SALES
+  FINANCE
+  BROKER
+  DEVELOPER
+}
+
+enum MandateStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+  TERMINATED
+}
+
+enum UnitStatus {
+  AVAILABLE
+  HOLD
+  BLOCKED
+  BOOKED
+  SOLD
+}
+
+enum LeadSource {
+  DIRECT
+  WEBSITE
+  META_ADS
+  GOOGLE_ADS
+  BROKER
+  WALK_IN
+  REFERRAL
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  FOLLOW_UP
+  VISIT_PLANNED
+  VISIT_DONE
+  NEGOTIATION
+  BOOKING_INITIATED
+  BOOKED
+  LOST
+  INVALID
+}
+
+enum VisitStatus {
+  SCHEDULED
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING_MGMT_APPROVAL
+  PENDING_DEV_APPROVAL
+  CONFIRMED
+  AGREEMENT
+  CANCELLED
+  REJECTED
+}
+
+enum ApprovalLevel {
+  NONE
+  MANAGEMENT
+  DEVELOPER
+}
+
+enum InstallmentStatus {
+  DUE
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum CommissionKind {
+  DEVELOPER_FEE
+  BROKER_PAYOUT
+  EMPLOYEE_INCENTIVE
+}
+
+enum CommissionStatus {
+  ACCRUED
+  EARNED
+  INVOICED
+  RECEIVED
+  APPROVED
+  PAID
+  REVERSED
+}
+
+model Developer {
+  id           String    @id @default(cuid())
+  name         String
+  city         String
+  contactName  String
+  contactEmail String
+  createdAt    DateTime  @default(now())
+  projects     Project[]
+  mandates     Mandate[]
+  users        User[]
+}
+
+model Project {
+  id              String                @id @default(cuid())
+  code            String                @unique
+  name            String
+  developerId     String
+  developer       Developer             @relation(fields: [developerId], references: [id])
+  city            String
+  locality        String
+  reraNo          String
+  type            String
+  possessionDate  DateTime
+  baseRatePerSqft Int
+  paymentPlanName String
+  createdAt       DateTime              @default(now())
+  towers          Tower[]
+  units           Unit[]
+  mandates        Mandate[]
+  planStages      PaymentPlanStage[]
+  leads           Lead[]
+  visits          SiteVisit[]
+  bookings        Booking[]
+  commissions     Commission[]
+  brokerAccess    BrokerProjectAccess[]
+  allocations     EmployeeAllocation[]
+}
+
+model PaymentPlanStage {
+  id            String  @id @default(cuid())
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id])
+  seq           Int
+  label         String
+  bps           Int
+  dueOffsetDays Int
+
+  @@unique([projectId, seq])
+}
+
+model Mandate {
+  id                    String        @id @default(cuid())
+  code                  String        @unique
+  projectId             String
+  project               Project       @relation(fields: [projectId], references: [id])
+  developerId           String
+  developer             Developer     @relation(fields: [developerId], references: [id])
+  status                MandateStatus @default(ACTIVE)
+  startDate             DateTime
+  endDate               DateTime
+  targetUnits           Int
+  // soleX fee charged to the developer, as bps of agreement value.
+  soleXFeeBps           Int
+  // Optional performance tier: once `feeTierUnits` bookings are reached, new bookings earn `feeTierBps`.
+  feeTierUnits          Int?
+  feeTierBps            Int?
+  brokerPayoutBps       Int
+  incentiveBps          Int
+  // Share of agreement value that must be collected before commissions are earned.
+  earningTriggerBps     Int
+  // Discounts up to execMaxDiscountBps need no approval; up to mgmtMaxDiscountBps need soleX management;
+  // anything above also needs the developer's approval.
+  execMaxDiscountBps    Int
+  mgmtMaxDiscountBps    Int
+  holdMinutes           Int
+  attributionWindowDays Int
+  forfeitureBps         Int
+  createdAt             DateTime      @default(now())
+  units                 Unit[]
+  bookings              Booking[]
+  commissions           Commission[]
+}
+
+model Tower {
+  id            String  @id @default(cuid())
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id])
+  name          String
+  floors        Int
+  unitsPerFloor Int
+  units         Unit[]
+
+  @@unique([projectId, name])
+}
+
+model Unit {
+  id              String     @id @default(cuid())
+  projectId       String
+  project         Project    @relation(fields: [projectId], references: [id])
+  towerId         String
+  tower           Tower      @relation(fields: [towerId], references: [id])
+  // Null when the unit is not part of soleX's appointed inventory (retained by the developer).
+  mandateId       String?
+  mandate         Mandate?   @relation(fields: [mandateId], references: [id])
+  unitNo          String
+  floor           Int
+  stack           Int
+  config          String
+  carpetSqft      Int
+  superSqft       Int
+  facing          String
+  basicAmount     Int
+  floorRiseAmount Int
+  plcAmount       Int
+  parkingAmount   Int
+  otherCharges    Int
+  listPrice       Int
+  status          UnitStatus @default(AVAILABLE)
+  holdById        String?
+  holdBy          User?      @relation("UnitHolds", fields: [holdById], references: [id])
+  holdExpiresAt   DateTime?
+  // Optimistic-concurrency token. Every status change must match and increment it.
+  version         Int        @default(0)
+  updatedAt       DateTime   @updatedAt
+  bookings        Booking[]
+
+  @@unique([projectId, unitNo])
+  @@index([projectId, status])
+}
+
+model Broker {
+  id          String                @id @default(cuid())
+  code        String                @unique
+  firmName    String
+  contactName String
+  phone       String
+  email       String
+  reraAgentNo String
+  city        String
+  status      String                @default("APPROVED")
+  createdAt   DateTime              @default(now())
+  users       User[]
+  access      BrokerProjectAccess[]
+  leads       Lead[]
+  visits      SiteVisit[]
+  bookings    Booking[]
+  commissions Commission[]
+}
+
+model BrokerProjectAccess {
+  brokerId  String
+  broker    Broker   @relation(fields: [brokerId], references: [id])
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+  grantedAt DateTime @default(now())
+
+  @@id([brokerId, projectId])
+}
+
+model User {
+  id            String               @id @default(cuid())
+  email         String               @unique
+  name          String
+  title         String
+  passwordHash  String
+  role          Role
+  active        Boolean              @default(true)
+  brokerId      String?
+  broker        Broker?              @relation(fields: [brokerId], references: [id])
+  developerId   String?
+  developer     Developer?           @relation(fields: [developerId], references: [id])
+  createdAt     DateTime             @default(now())
+  allocations   EmployeeAllocation[]
+  assignedLeads Lead[]               @relation("LeadAssignee")
+  activities    LeadActivity[]
+  calls         Call[]
+  visits        SiteVisit[]
+  bookings      Booking[]            @relation("BookingExec")
+  payments      Payment[]
+  commissions   Commission[]
+  heldUnits     Unit[]               @relation("UnitHolds")
+}
+
+model EmployeeAllocation {
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+
+  @@id([userId, projectId])
+}
+
+model Customer {
+  id              String    @id @default(cuid())
+  name            String
+  phone           String
+  phoneNormalized String    @unique
+  email           String?
+  createdAt       DateTime
+  leads           Lead[]
+  bookings        Booking[]
+}
+
+model Lead {
+  id                   String         @id @default(cuid())
+  code                 String         @unique
+  projectId            String
+  project              Project        @relation(fields: [projectId], references: [id])
+  name                 String
+  phone                String
+  phoneNormalized      String
+  email                String?
+  budgetMin            Int?
+  budgetMax            Int?
+  configPref           String?
+  source               LeadSource
+  campaign             String?
+  brokerId             String?
+  broker               Broker?        @relation(fields: [brokerId], references: [id])
+  attributionExpiresAt DateTime?
+  assignedToId         String?
+  assignedTo           User?          @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  stage                LeadStage      @default(NEW)
+  lostReason           String?
+  nextFollowUpAt       DateTime?
+  lastContactAt        DateTime?
+  customerId           String?
+  customer             Customer?      @relation(fields: [customerId], references: [id])
+  createdAt            DateTime
+  updatedAt            DateTime
+  activities           LeadActivity[]
+  visits               SiteVisit[]
+  bookings             Booking[]
+  calls                Call[]
+
+  @@index([projectId, phoneNormalized])
+  @@index([assignedToId, stage])
+  @@index([brokerId])
+}
+
+model LeadActivity {
+  id     String   @id @default(cuid())
+  leadId String
+  lead   Lead     @relation(fields: [leadId], references: [id])
+  userId String?
+  user   User?    @relation(fields: [userId], references: [id])
+  type   String
+  note   String
+  at     DateTime
+  call   Call?
+
+  @@index([leadId, at])
+}
+
+enum CallStatus {
+  IN_PROGRESS
+  COMPLETED
+  NO_ANSWER
+  DROPPED
+}
+
+enum InsightPolarity {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+}
+
+/// An outbound call placed by a sales exec from the lead page. In this demo the
+/// call is simulated: the conversation is generated deterministically from the
+/// lead and project, and the transcript is analysed by rule-based extraction
+/// (no telephony, speech-to-text or AI services).
+model Call {
+  id            String           @id @default(cuid())
+  leadId        String
+  lead          Lead             @relation(fields: [leadId], references: [id])
+  userId        String
+  user          User             @relation(fields: [userId], references: [id])
+  /// 1 for the first call ever placed to this lead, 2 for the next, ...
+  attempt       Int
+  status        CallStatus       @default(IN_PROGRESS)
+  /// Decided when the call is placed (simulated network outcome).
+  answered      Boolean
+  ringSec       Int
+  /// Length of the full scripted conversation, in seconds.
+  scriptSec     Int
+  /// JSON CallLine[]: the whole conversation that would happen if nobody hangs up.
+  script        String
+  startedAt     DateTime
+  endedAt       DateTime?
+  talkSec       Int              @default(0)
+  /// JSON CallLine[]: what was actually said before the call ended.
+  transcript    String?
+  summary       String?
+  sentiment     InsightPolarity?
+  interestScore Int?
+  execTalkPct   Int?
+  nextStep      String?
+  /// The CALL interaction this call was logged as (set when the call ends).
+  activityId    String?          @unique
+  activity      LeadActivity?    @relation(fields: [activityId], references: [id])
+  insights      CallInsight[]
+
+  @@unique([leadId, attempt])
+  @@index([userId, status])
+}
+
+model CallInsight {
+  id       String          @id @default(cuid())
+  callId   String
+  call     Call            @relation(fields: [callId], references: [id])
+  seq      Int
+  polarity InsightPolarity
+  category String
+  text     String
+  /// The customer's words the insight was extracted from.
+  quote    String
+  atSec    Int
+
+  @@index([callId])
+}
+
+model SiteVisit {
+  id           String      @id @default(cuid())
+  leadId       String
+  lead         Lead        @relation(fields: [leadId], references: [id])
+  projectId    String
+  project      Project     @relation(fields: [projectId], references: [id])
+  scheduledAt  DateTime
+  assignedToId String
+  assignedTo   User        @relation(fields: [assignedToId], references: [id])
+  brokerId     String?
+  broker       Broker?     @relation(fields: [brokerId], references: [id])
+  status       VisitStatus @default(SCHEDULED)
+  feedback     String?
+  rating       Int?
+  completedAt  DateTime?
+  createdAt    DateTime
+
+  @@index([projectId, scheduledAt])
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  code            String        @unique
+  unitId          String
+  unit            Unit          @relation(fields: [unitId], references: [id])
+  // Equals unitId while the booking is live and null once cancelled/rejected.
+  // The unique index makes a second live booking on the same unit impossible at the database level.
+  unitLockKey     String?       @unique
+  leadId          String
+  lead            Lead          @relation(fields: [leadId], references: [id])
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  projectId       String
+  project         Project       @relation(fields: [projectId], references: [id])
+  mandateId       String
+  mandate         Mandate       @relation(fields: [mandateId], references: [id])
+  brokerId        String?
+  broker          Broker?       @relation(fields: [brokerId], references: [id])
+  salesExecId     String
+  salesExec       User          @relation("BookingExec", fields: [salesExecId], references: [id])
+  listPrice       Int
+  discountAmount  Int
+  discountBps     Int
+  agreementValue  Int
+  // Frozen price breakdown (JSON) so later price revisions never rewrite a booking.
+  priceSnapshot   String
+  status          BookingStatus
+  approvalLevel   ApprovalLevel
+  mgmtApprovedBy  String?
+  mgmtApprovedAt  DateTime?
+  devApprovedBy   String?
+  devApprovedAt   DateTime?
+  rejectionReason String?
+  bookedAt        DateTime
+  confirmedAt     DateTime?
+  agreementAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  forfeitedAmount Int           @default(0)
+  refundDue       Int           @default(0)
+  installments    Installment[]
+  payments        Payment[]
+  commissions     Commission[]
+
+  @@index([projectId, status])
+  @@index([brokerId])
+}
+
+model Installment {
+  id             String            @id @default(cuid())
+  bookingId      String
+  booking        Booking           @relation(fields: [bookingId], references: [id])
+  seq            Int
+  label          String
+  bps            Int
+  dueDate        DateTime
+  amountDue      Int
+  amountReceived Int               @default(0)
+  status         InstallmentStatus @default(DUE)
+
+  @@unique([bookingId, seq])
+  @@index([status, dueDate])
+}
+
+model Payment {
+  id           String   @id @default(cuid())
+  bookingId    String
+  booking      Booking  @relation(fields: [bookingId], references: [id])
+  amount       Int
+  mode         String
+  reference    String
+  receivedAt   DateTime
+  recordedById String
+  recordedBy   User     @relation(fields: [recordedById], references: [id])
+  createdAt    DateTime
+
+  // The same bank reference cannot be recorded twice against a booking.
+  @@unique([bookingId, reference])
+}
+
+model Commission {
+  id           String           @id @default(cuid())
+  bookingId    String
+  booking      Booking          @relation(fields: [bookingId], references: [id])
+  mandateId    String
+  mandate      Mandate          @relation(fields: [mandateId], references: [id])
+  projectId    String
+  project      Project          @relation(fields: [projectId], references: [id])
+  kind         CommissionKind
+  brokerId     String?
+  broker       Broker?          @relation(fields: [brokerId], references: [id])
+  userId       String?
+  user         User?            @relation(fields: [userId], references: [id])
+  baseAmount   Int
+  // Rate snapshotted from the mandate at accrual time.
+  rateBps      Int
+  amount       Int
+  status       CommissionStatus @default(ACCRUED)
+  // Negative clawback lines created when a booking with settled commission is cancelled.
+  isAdjustment Boolean          @default(false)
+  reversesId   String?
+  reference    String?
+  accruedAt    DateTime
+  earnedAt     DateTime?
+  invoicedAt   DateTime?
+  approvedAt   DateTime?
+  settledAt    DateTime?
+
+  @@index([kind, status])
+  @@index([bookingId])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  at         DateTime
+  actorId    String?
+  actorName  String
+  actorRole  String
+  type       String
+  entityType String
+  entityId   String
+  projectId  String?
+  summary    String
+  data       String?
+
+  @@index([entityType, entityId])
+  @@index([at])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  createdAt  DateTime
+  channel    String
+  recipient  String
+  subject    String?
+  body       String
+  status     String   @default("SIMULATED")
+  entityType String?
+  entityId   String?
+
+  @@index([createdAt])
+}

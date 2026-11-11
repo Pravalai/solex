@@ -1,0 +1,665 @@
+<title>soleX OS Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a single reading column of numbered figures, each a drawing plus a short caption; wide drawings scroll inside their own frame. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #eceff4;
+  --fg: #1c2632;
+  --muted: #586473;
+  --line: #d3d9e1;
+  --line-strong: #98a4b2;
+  --heading: #2e3a46;
+  --gold: #8d6a2b;
+  --gold-soft: #f4ecdc;
+  --ok: #2c7552;
+  --ok-soft: #e2f0e8;
+  --warn: #a2391f;
+  --warn-soft: #f7e3dd;
+  --band: rgba(168, 136, 79, 0.11);
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --display: "IBM Plex Sans Condensed", "IBM Plex Sans", "Arial Narrow", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10151b; --surface: #17202a; --surface-2: #1e2833; --fg: #e3e8ee; --muted: #9ba7b4;
+    --line: #2b3642; --line-strong: #4b5967; --heading: #d3deea; --gold: #d4b06c; --gold-soft: #372e1f;
+    --ok: #6dc89b; --ok-soft: #163126; --warn: #f08a70; --warn-soft: #3a211b; --band: rgba(212, 176, 108, 0.10);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10151b; --surface: #17202a; --surface-2: #1e2833; --fg: #e3e8ee; --muted: #9ba7b4;
+  --line: #2b3642; --line-strong: #4b5967; --heading: #d3deea; --gold: #d4b06c; --gold-soft: #372e1f;
+  --ok: #6dc89b; --ok-soft: #163126; --warn: #f08a70; --warn-soft: #3a211b; --band: rgba(212, 176, 108, 0.10);
+  color-scheme: dark;
+}
+
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+.wrap {
+  max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+}
+header { display: grid; gap: 14px; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
+.eyebrow { font: 600 12px/1 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); }
+h1 { margin: 0; font: 600 clamp(30px, 5vw, 44px)/1.08 var(--display); color: var(--heading); text-wrap: balance; }
+h1 .x { color: var(--gold); }
+.lede { margin: 0; max-width: 68ch; color: var(--muted); font-size: 16px; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+nav.toc a {
+  font: 500 13px/1 var(--sans); color: var(--fg); text-decoration: none;
+  border: 1px solid var(--line); background: var(--surface); padding: 7px 10px; border-radius: 6px;
+}
+nav.toc a:hover, nav.toc a:focus-visible { border-color: var(--gold); outline: none; }
+nav.toc a span { color: var(--gold); font-family: var(--mono); margin-right: 6px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend svg { flex: none; }
+
+section { padding-top: 44px; display: grid; gap: 14px; }
+h2 { margin: 0; font: 600 24px/1.2 var(--display); color: var(--heading); text-wrap: balance; display: flex; gap: 12px; align-items: baseline; }
+h2 .n { font: 500 14px/1 var(--mono); color: var(--gold); }
+.intro { margin: 0; max-width: 72ch; }
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.frame { overflow-x: auto; padding: 18px 18px 8px; }
+figcaption { padding: 12px 18px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; max-width: 100%; }
+figcaption strong { color: var(--fg); font-weight: 600; }
+
+/* ---- drawings ---- */
+.dg { display: block; width: 100%; height: auto; color: var(--muted); }
+.dg.w900 { min-width: 860px; } .dg.w1000 { min-width: 980px; } .dg.w1100 { min-width: 1080px; } .dg.w800 { min-width: 760px; }
+.dg text { font-family: var(--mono); font-size: 12px; fill: var(--fg); }
+.dg .ti { font-family: var(--sans); font-weight: 600; font-size: 13.5px; }
+.dg .sub { fill: var(--muted); font-size: 10.5px; }
+.dg .lab { fill: var(--muted); font-size: 11px; }
+.dg .cap { fill: var(--muted); font-family: var(--sans); font-weight: 600; font-size: 10.5px; letter-spacing: 0.08em; }
+.dg .lane { font-family: var(--sans); font-weight: 600; font-size: 12.5px; }
+.dg .sys { font-family: var(--sans); font-size: 11px; }
+.dg .act { font-family: var(--sans); font-weight: 600; font-size: 12.5px; }
+.dg .actsub { font-family: var(--sans); font-size: 11px; fill: var(--muted); }
+.dg .box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; }
+.dg .box2 { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+.dg .hl { fill: var(--gold-soft); stroke: var(--gold); stroke-width: 1.4; }
+.dg .okbox { fill: var(--ok-soft); stroke: var(--ok); }
+.dg .warnbox { fill: var(--warn-soft); stroke: var(--warn); }
+.dg .dash { stroke-dasharray: 5 4; }
+.dg .edge { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.dg .edge.gold { stroke: var(--gold); }
+.dg .edge.ok { stroke: var(--ok); }
+.dg .edge.warn { stroke: var(--warn); }
+.dg .dot { fill: none; stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 2 3; }
+.dg .life { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 4; }
+.dg .band { fill: var(--band); }
+.dg .laneband { fill: var(--surface-2); }
+.dg .mk { fill: var(--muted); } .dg .mk-gold { fill: var(--gold); } .dg .mk-ok { fill: var(--ok); } .dg .mk-warn { fill: var(--warn); }
+.dg .t-gold { fill: var(--gold); } .dg .t-ok { fill: var(--ok); } .dg .t-warn { fill: var(--warn); } .dg .t-muted { fill: var(--muted); }
+.dg .num { fill: var(--heading); } .dg .numt { fill: var(--surface); font-family: var(--sans); font-weight: 600; font-size: 11px; }
+.dg .strong { font-weight: 500; }
+
+/* ---- tables & lists ---- */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 720px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+th { font: 600 12px/1.3 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; color: var(--heading); white-space: nowrap; }
+td .k { font-family: var(--mono); font-size: 12.5px; }
+.yes { color: var(--ok); } .no { color: var(--warn); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+.card h3 { margin: 0 0 8px; font: 600 15px/1.3 var(--sans); color: var(--heading); }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.card.sim { border-style: dashed; border-color: var(--gold); }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+@media (max-width: 560px) { body { font-size: 14.5px; } .frame { padding: 12px 12px 6px; } figcaption { padding: 10px 12px 14px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">soleX Round 2 · architecture</div>
+    <h1>How sole<span class="x">X</span> OS fits together</h1>
+    <p class="lede">One app, one database and one set of business rules serve five kinds of user. A partner's registration becomes the lead, the booking changes the inventory, and the money collected releases the commission. Each step happens once, in one transaction, and every screen reads the result.</p>
+    <nav class="toc" aria-label="Figures">
+      <a href="#layers"><span>1</span>Layers</a>
+      <a href="#modules"><span>2</span>Module dependencies</a>
+      <a href="#flow"><span>3</span>Lead to commission</a>
+      <a href="#data"><span>4</span>Data model</a>
+      <a href="#states"><span>5</span>Linked status changes</a>
+      <a href="#race"><span>6</span>No double booking</a>
+      <a href="#access"><span>7</span>Who sees what</a>
+      <a href="#effects"><span>8</span>What updates when</a>
+    </nav>
+    <div class="legend" aria-label="How to read the drawings">
+      <span><svg width="34" height="10" aria-hidden="true"><line x1="0" y1="5" x2="26" y2="5" stroke="var(--muted)" stroke-width="1.6"/><path d="M26 1L34 5L26 9z" fill="var(--muted)"/></svg>calls or moves data</span>
+      <span><svg width="34" height="10" aria-hidden="true"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="5 4"/></svg>reads only, or simulated</span>
+      <span><svg width="22" height="14" aria-hidden="true"><rect x="1" y="1" width="20" height="12" rx="3" fill="var(--gold-soft)" stroke="var(--gold)"/></svg>mandate rule or key state</span>
+      <span><svg width="22" height="14" aria-hidden="true"><rect x="0" y="0" width="22" height="14" rx="3" fill="var(--band)"/></svg>changes together in one transaction</span>
+    </div>
+  </header>
+
+  <!-- 1 ─────────────────────────────────────────────── -->
+  <section id="layers">
+    <h2><span class="n">01</span>Layers: from a person to the database</h2>
+    <p class="intro">Every screen, for every role, goes through the same path. The browser never talks to the database, and no screen has its own copy of the rules.</p>
+    <figure>
+      <div class="frame">
+        <svg class="dg w900" viewBox="0 0 1000 650" role="img" aria-label="Five kinds of user reach three surfaces of one app. A gate checks the session and surface. Writes go through server actions and reads through role-scoped read models into seven domain modules, which use one database. Messages to WhatsApp, email and SMS are simulated through an outbox.">
+          <defs>
+            <marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk"/></marker>
+            <marker id="m1g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk-gold"/></marker>
+          </defs>
+          <text class="cap" x="25" y="18">PEOPLE</text>
+          <g>
+            <rect class="box" x="25" y="26" width="170" height="44" rx="8"/><text class="ti" x="110" y="53" text-anchor="middle">soleX management</text>
+            <rect class="box" x="220" y="26" width="170" height="44" rx="8"/><text class="ti" x="305" y="53" text-anchor="middle">Sales exec</text>
+            <rect class="box" x="415" y="26" width="170" height="44" rx="8"/><text class="ti" x="500" y="53" text-anchor="middle">Finance</text>
+            <rect class="box" x="610" y="26" width="170" height="44" rx="8"/><text class="ti" x="695" y="53" text-anchor="middle">Channel partner</text>
+            <rect class="box" x="805" y="26" width="170" height="44" rx="8"/><text class="ti" x="890" y="53" text-anchor="middle">Developer</text>
+          </g>
+          <g>
+            <line class="edge" x1="110" y1="70" x2="110" y2="117" marker-end="url(#m1)"/>
+            <line class="edge" x1="305" y1="70" x2="305" y2="117" marker-end="url(#m1)"/>
+            <line class="edge" x1="500" y1="70" x2="500" y2="117" marker-end="url(#m1)"/>
+            <line class="edge" x1="695" y1="70" x2="695" y2="117" marker-end="url(#m1)"/>
+            <line class="edge" x1="890" y1="70" x2="890" y2="117" marker-end="url(#m1)"/>
+          </g>
+
+          <text class="cap" x="122" y="112">SURFACES · ONE APP</text>
+          <rect class="box" x="25" y="120" width="560" height="58" rx="8"/>
+          <text class="ti" x="305" y="144" text-anchor="middle">Internal app</text>
+          <text class="sub" x="305" y="163" text-anchor="middle">command centre · inventory · leads · bookings · finance · activity</text>
+          <rect class="box" x="610" y="120" width="170" height="58" rx="8"/>
+          <text class="ti" x="695" y="144" text-anchor="middle">Partner portal</text>
+          <text class="sub" x="695" y="163" text-anchor="middle">mobile-first</text>
+          <rect class="box" x="805" y="120" width="170" height="58" rx="8"/>
+          <text class="ti" x="890" y="144" text-anchor="middle">Developer portal</text>
+          <text class="sub" x="890" y="163" text-anchor="middle">approvals · MIS export</text>
+          <line class="edge" x1="305" y1="178" x2="305" y2="207" marker-end="url(#m1)"/>
+          <line class="edge" x1="695" y1="178" x2="695" y2="207" marker-end="url(#m1)"/>
+          <line class="edge" x1="890" y1="178" x2="890" y2="207" marker-end="url(#m1)"/>
+
+          <rect class="box" x="25" y="210" width="950" height="48" rx="8"/>
+          <text class="ti" x="500" y="231" text-anchor="middle">Gate (proxy.ts)</text>
+          <text class="sub" x="500" y="249" text-anchor="middle">is the signed session valid? is this the right surface for this role? if not, back to sign-in or to the user's own home</text>
+          <line class="edge" x1="257" y1="258" x2="257" y2="287" marker-end="url(#m1)"/>
+          <line class="edge" x1="742" y1="258" x2="742" y2="287" marker-end="url(#m1)"/>
+
+          <rect class="box" x="25" y="290" width="465" height="74" rx="8"/>
+          <text class="ti" x="257" y="313" text-anchor="middle">Server Actions · every write</text>
+          <text class="sub" x="257" y="332" text-anchor="middle">who is this? → may they do it? → is the input valid? → call the service</text>
+          <text class="sub" x="257" y="350" text-anchor="middle">then refresh every screen that shows the changed records</text>
+          <rect class="box" x="510" y="290" width="465" height="74" rx="8"/>
+          <text class="ti" x="742" y="313" text-anchor="middle">Read models · every read</text>
+          <text class="sub" x="742" y="332" text-anchor="middle">only the rows this user may see, only the fields this surface may show</text>
+          <text class="sub" x="742" y="350" text-anchor="middle">one read model per screen; nothing is cached or counted twice</text>
+          <line class="edge" x1="257" y1="364" x2="257" y2="409" marker-end="url(#m1)"/>
+          <text class="lab" x="266" y="392">one transaction per command</text>
+          <line class="edge dash" x1="742" y1="364" x2="742" y2="409" marker-end="url(#m1)"/>
+          <text class="lab" x="751" y="392">reads only</text>
+
+          <rect class="box2" x="25" y="412" width="950" height="118" rx="10"/>
+          <text class="cap" x="45" y="432">DOMAIN LAYER · src/modules · BUSINESS RULES, NO SCREEN CODE</text>
+          <g>
+            <rect class="box" x="45" y="446" width="118" height="60" rx="7"/><text class="ti" x="104" y="471" text-anchor="middle">identity</text><text class="sub" x="104" y="490" text-anchor="middle">roles · scopes</text>
+            <rect class="box" x="177" y="446" width="118" height="60" rx="7"/><text class="ti" x="236" y="471" text-anchor="middle">inventory</text><text class="sub" x="236" y="490" text-anchor="middle">units · holds</text>
+            <rect class="box" x="309" y="446" width="118" height="60" rx="7"/><text class="ti" x="368" y="471" text-anchor="middle">crm</text><text class="sub" x="368" y="490" text-anchor="middle">leads · visits</text>
+            <rect class="box" x="441" y="446" width="118" height="60" rx="7"/><text class="ti" x="500" y="471" text-anchor="middle">sales</text><text class="sub" x="500" y="490" text-anchor="middle">bookings</text>
+            <rect class="box" x="573" y="446" width="118" height="60" rx="7"/><text class="ti" x="632" y="471" text-anchor="middle">finance</text><text class="sub" x="632" y="490" text-anchor="middle">money · ledger</text>
+            <rect class="box" x="705" y="446" width="118" height="60" rx="7"/><text class="ti" x="764" y="471" text-anchor="middle">audit + outbox</text><text class="sub" x="764" y="490" text-anchor="middle">events · messages</text>
+            <rect class="box" x="837" y="446" width="118" height="60" rx="7"/><text class="ti" x="896" y="471" text-anchor="middle">reporting</text><text class="sub" x="896" y="490" text-anchor="middle">read models</text>
+          </g>
+
+                    <rect class="box" x="25" y="566" width="230" height="64" rx="8"/>
+          <text class="ti" x="140" y="590" text-anchor="middle">Seed and tests</text>
+          <text class="sub" x="140" y="608" text-anchor="middle">replay 6 months of history</text>
+          <text class="sub" x="140" y="622" text-anchor="middle">through the same services</text>
+          <line class="edge" x1="140" y1="566" x2="140" y2="533" marker-end="url(#m1)"/>
+          <text class="lab" x="149" y="552">calls</text>
+
+          <rect class="hl" x="300" y="566" width="400" height="64" rx="8"/>
+          <text class="ti" x="500" y="591" text-anchor="middle">One database</text>
+          <text class="sub" x="500" y="610" text-anchor="middle">SQLite in the demo · PostgreSQL in production</text>
+          <line class="edge" x1="500" y1="530" x2="500" y2="563" marker-end="url(#m1)"/>
+          <text class="lab" x="509" y="551">reads + writes</text>
+
+          <rect class="box dash" x="745" y="566" width="230" height="64" rx="8" style="stroke: var(--gold)"/>
+          <text class="ti" x="860" y="588" text-anchor="middle">WhatsApp · email · SMS</text>
+          <text class="sub" x="860" y="605" text-anchor="middle">payments · accounting</text>
+          <text class="sub t-gold" x="860" y="621" text-anchor="middle">simulated: outbox only</text>
+          <line class="edge gold dash" x1="790" y1="506" x2="820" y2="563" marker-end="url(#m1g)"/>
+          <text class="lab" x="830" y="548">future delivery worker</text>
+        </svg>
+      </div>
+      <figcaption><strong>One path for everyone.</strong> Partners and developers use the same app and database as soleX staff. Only the gate, the permissions and the read models differ. The business rules (who may book, when commission is earned) live once, in the domain layer, so no screen can bend them. Outbound messages are written to an outbox in the same transaction as the change that caused them; in production a worker would deliver them.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 2 ─────────────────────────────────────────────── -->
+  <section id="modules">
+    <h2><span class="n">02</span>Module dependencies</h2>
+    <p class="intro">Which part of the system calls which. Arrows point from the caller to the module it depends on. There are no loops, so each module can be changed and tested on its own.</p>
+    <figure>
+      <div class="frame">
+        <svg class="dg w800" viewBox="0 0 1000 420" role="img" aria-label="Sales depends on crm, inventory and finance. Finance depends on inventory to mark a unit sold. Reporting only reads. Every module uses identity, audit and the shared library.">
+          <defs>
+            <marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk"/></marker>
+          </defs>
+          <rect class="hl" x="290" y="28" width="200" height="62" rx="8"/>
+          <text class="ti" x="390" y="54" text-anchor="middle">sales</text>
+          <text class="sub" x="390" y="73" text-anchor="middle">book · approve · cancel</text>
+
+          <rect class="box" x="30" y="180" width="200" height="60" rx="8"/>
+          <text class="ti" x="130" y="205" text-anchor="middle">crm</text>
+          <text class="sub" x="130" y="224" text-anchor="middle">leads · visits · attribution</text>
+          <rect class="box" x="290" y="180" width="200" height="60" rx="8"/>
+          <text class="ti" x="390" y="205" text-anchor="middle">inventory</text>
+          <text class="sub" x="390" y="224" text-anchor="middle">units · holds · locking</text>
+          <rect class="box" x="590" y="180" width="200" height="60" rx="8"/>
+          <text class="ti" x="690" y="205" text-anchor="middle">finance</text>
+          <text class="sub" x="690" y="224" text-anchor="middle">schedule · receipts · ledger</text>
+          <rect class="box dash" x="830" y="180" width="150" height="60" rx="8"/>
+          <text class="ti" x="905" y="205" text-anchor="middle">reporting</text>
+          <text class="sub" x="905" y="224" text-anchor="middle">never writes</text>
+
+          <line class="edge" x1="315" y1="90" x2="178" y2="177" marker-end="url(#m2)"/>
+          <text class="lab" x="236" y="122" text-anchor="end">moves the</text>
+          <text class="lab" x="236" y="137" text-anchor="end">lead's stage</text>
+          <line class="edge" x1="390" y1="90" x2="390" y2="177" marker-end="url(#m2)"/>
+          <text class="lab" x="399" y="126">locks, books,</text>
+          <text class="lab" x="399" y="141">releases unit</text>
+          <line class="edge" x1="462" y1="90" x2="642" y2="177" marker-end="url(#m2)"/>
+          <text class="lab" x="578" y="120">creates schedule +</text>
+          <text class="lab" x="578" y="135">commission lines</text>
+          <line class="edge" x1="590" y1="210" x2="493" y2="210" marker-end="url(#m2)"/>
+          <text class="lab" x="541" y="202" text-anchor="middle">unit → sold</text>
+
+          <rect class="box2" x="30" y="298" width="950" height="104" rx="10"/>
+          <text class="cap" x="50" y="318">FOUNDATION · USED BY EVERY MODULE</text>
+          <rect class="box" x="50" y="330" width="290" height="56" rx="7"/>
+          <text class="ti" x="195" y="353" text-anchor="middle">identity</text>
+          <text class="sub" x="195" y="372" text-anchor="middle">actor · permissions · row scopes</text>
+          <rect class="box" x="360" y="330" width="290" height="56" rx="7"/>
+          <text class="ti" x="505" y="353" text-anchor="middle">audit + outbox</text>
+          <text class="sub" x="505" y="372" text-anchor="middle">event + message, same transaction</text>
+          <rect class="box" x="670" y="330" width="290" height="56" rx="7"/>
+          <text class="ti" x="815" y="353" text-anchor="middle">lib</text>
+          <text class="sub" x="815" y="372" text-anchor="middle">transactions · money · status rules</text>
+
+          <line class="edge" x1="130" y1="240" x2="130" y2="295" marker-end="url(#m2)"/>
+          <line class="edge" x1="390" y1="240" x2="390" y2="295" marker-end="url(#m2)"/>
+          <line class="edge" x1="690" y1="240" x2="690" y2="295" marker-end="url(#m2)"/>
+          <line class="edge dash" x1="905" y1="240" x2="905" y2="295" marker-end="url(#m2)"/>
+          <text class="lab" x="139" y="272">uses</text>
+          <text class="lab" x="914" y="272">reads tables</text>
+        </svg>
+      </div>
+      <figcaption><strong>Sales is the conductor.</strong> A booking is the one command that touches three other modules, which is why it runs as a single transaction. Finance reaches back into inventory only to mark a unit sold once enough money is in. Reporting reads the same tables but cannot change them, so dashboards can never disagree with the records.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 3 ─────────────────────────────────────────────── -->
+  <section id="flow">
+    <h2><span class="n">03</span>Lead to commission, end to end</h2>
+    <p class="intro">The demo's main journey. Each column is one step, done by one person; the bottom row lists what the system changes in that same step. The gold tags show the mandate rule each step obeys.</p>
+    <figure>
+      <div class="frame">
+        <svg class="dg w1100" viewBox="0 0 1240 606" role="img" aria-label="Eight steps across five roles: partner registers the buyer, sales exec calls and runs a site visit, books the unit at 4.5 percent off, soleX management approves, the developer approves, finance records receipts, finance settles commission, and every view updates. Each step changes leads, units, bookings, schedules and commission lines in one transaction.">
+          <defs>
+            <marker id="m3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk"/></marker>
+          </defs>
+          <!-- mandate rules -->
+          <text class="cap" x="12" y="25">MANDATE RULE</text>
+          <rect class="hl" x="135" y="10" width="130" height="22" rx="11"/><text class="sub t-gold" x="200" y="25" text-anchor="middle">attribution 90 days</text>
+          <rect class="hl" x="411" y="10" width="130" height="22" rx="11"/><text class="sub t-gold" x="476" y="25" text-anchor="middle">bands 1% / 3%</text>
+          <rect class="hl" x="687" y="10" width="130" height="22" rx="11"/><text class="sub t-gold" x="752" y="25" text-anchor="middle">rates: 3% · 1.5%</text>
+          <rect class="hl" x="825" y="10" width="130" height="22" rx="11"/><text class="sub t-gold" x="890" y="25" text-anchor="middle">earned at 20% paid</text>
+
+          <!-- lanes -->
+          <rect class="laneband" x="0" y="102" width="1240" height="60"/>
+          <rect class="laneband" x="0" y="222" width="1240" height="60"/>
+          <text class="lane" x="12" y="76">Channel partner</text>
+          <text class="lane" x="12" y="136">Sales exec</text>
+          <text class="lane" x="12" y="196">soleX management</text>
+          <text class="lane" x="12" y="256">Developer</text>
+          <text class="lane" x="12" y="316">Finance</text>
+
+          <!-- dotted drops to the system row -->
+          <line class="dot" x1="200" y1="94" x2="200" y2="360"/>
+          <line class="dot" x1="338" y1="154" x2="338" y2="360"/>
+          <line class="dot" x1="476" y1="154" x2="476" y2="360"/>
+          <line class="dot" x1="614" y1="214" x2="614" y2="360"/>
+          <line class="dot" x1="752" y1="274" x2="752" y2="360"/>
+          <line class="dot" x1="890" y1="334" x2="890" y2="360"/>
+          <line class="dot" x1="1028" y1="334" x2="1028" y2="360"/>
+          <line class="dot" x1="1166" y1="338" x2="1166" y2="360"/>
+
+          <!-- action boxes: circle number + two-line label -->
+          <g>
+            <rect class="box" x="138" y="50" width="124" height="44" rx="7"/><circle class="num" cx="153" cy="72" r="9"/><text class="numt" x="153" y="76" text-anchor="middle">1</text><text class="act" x="168" y="68">Registers</text><text class="actsub" x="168" y="84">the buyer</text>
+            <rect class="box" x="276" y="110" width="124" height="44" rx="7"/><circle class="num" cx="291" cy="132" r="9"/><text class="numt" x="291" y="136" text-anchor="middle">2</text><text class="act" x="306" y="128">Calls, runs</text><text class="actsub" x="306" y="144">a site visit</text>
+            <rect class="box" x="414" y="110" width="124" height="44" rx="7"/><circle class="num" cx="429" cy="132" r="9"/><text class="numt" x="429" y="136" text-anchor="middle">3</text><text class="act" x="444" y="128">Books unit</text><text class="actsub" x="444" y="144">at 4.5% off</text>
+            <rect class="box" x="552" y="170" width="124" height="44" rx="7"/><circle class="num" cx="567" cy="192" r="9"/><text class="numt" x="567" y="196" text-anchor="middle">4</text><text class="act" x="582" y="188">Approves</text><text class="actsub" x="582" y="204">over 1% band</text>
+            <rect class="box" x="690" y="230" width="124" height="44" rx="7"/><circle class="num" cx="705" cy="252" r="9"/><text class="numt" x="705" y="256" text-anchor="middle">5</text><text class="act" x="720" y="248">Approves</text><text class="actsub" x="720" y="264">over 3% band</text>
+            <rect class="box" x="828" y="290" width="124" height="44" rx="7"/><circle class="num" cx="843" cy="312" r="9"/><text class="numt" x="843" y="316" text-anchor="middle">6</text><text class="act" x="858" y="308">Records</text><text class="actsub" x="858" y="324">receipts</text>
+            <rect class="box" x="966" y="290" width="124" height="44" rx="7"/><circle class="num" cx="981" cy="312" r="9"/><text class="numt" x="981" y="316" text-anchor="middle">7</text><text class="act" x="996" y="308">Invoices fee,</text><text class="actsub" x="996" y="324">pays partner</text>
+          </g>
+          <!-- step 8 spans every lane -->
+          <rect class="hl" x="1104" y="46" width="124" height="292" rx="8"/>
+          <circle class="num" cx="1119" cy="60" r="9"/><text class="numt" x="1119" y="64" text-anchor="middle">8</text>
+          <text class="sub" x="1166" y="84" text-anchor="middle">brokerage</text>
+          <text class="sub" x="1166" y="140" text-anchor="middle">my leads</text>
+          <text class="sub" x="1166" y="200" text-anchor="middle">command centre</text>
+          <text class="sub" x="1166" y="260" text-anchor="middle">sales · fee owed</text>
+          <text class="sub" x="1166" y="320" text-anchor="middle">ledger</text>
+
+          <!-- handoffs -->
+          <path class="edge" d="M262 72 H269 V132 H273" marker-end="url(#m3)"/>
+          <path class="edge" d="M400 132 H411" marker-end="url(#m3)"/>
+          <path class="edge" d="M538 132 H545 V192 H549" marker-end="url(#m3)"/>
+          <path class="edge" d="M676 192 H683 V252 H687" marker-end="url(#m3)"/>
+          <path class="edge" d="M814 252 H821 V312 H825" marker-end="url(#m3)"/>
+          <path class="edge" d="M952 312 H963" marker-end="url(#m3)"/>
+          <path class="edge" d="M1090 312 H1101" marker-end="url(#m3)"/>
+
+          <!-- system row -->
+          <text class="cap" x="12" y="382">RECORDS CHANGED</text>
+          <text class="cap" x="12" y="398">IN THE SAME</text>
+          <text class="cap" x="12" y="414">TRANSACTION</text>
+          <g class="sys">
+            <rect class="box2" x="138" y="362" width="124" height="230" rx="7"/>
+            <text class="sys" x="146" y="382">Lead created</text><text class="sys t-muted" x="146" y="397">source: partner</text><text class="sys" x="146" y="412">attribution held</text><text class="sys t-muted" x="146" y="427">for 90 days</text><text class="sys" x="146" y="442">duplicate blocked</text><text class="sys" x="146" y="457">exec auto-assigned</text><text class="sys t-muted" x="146" y="472">WhatsApp to exec</text>
+
+            <rect class="box2" x="276" y="362" width="124" height="230" rx="7"/>
+            <text class="sys" x="284" y="382">Calls logged</text><text class="sys" x="284" y="397">Visit scheduled</text><text class="sys t-muted" x="284" y="412">WhatsApp to buyer</text><text class="sys" x="284" y="427">Lead stage:</text><text class="sys t-muted" x="284" y="442">contacted →</text><text class="sys t-muted" x="284" y="457">visit planned →</text><text class="sys t-muted" x="284" y="472">visit done</text>
+
+            <rect class="box2" x="414" y="362" width="124" height="230" rx="7"/>
+            <text class="sys" x="422" y="382">Unit version</text><text class="sys t-muted" x="422" y="397">checked, then</text><text class="sys t-gold" x="422" y="412">approval lock</text><text class="sys" x="422" y="427">Booking pending</text><text class="sys" x="422" y="442">Customer created</text><text class="sys" x="422" y="457">Price snapshot</text><text class="sys t-muted" x="422" y="472">Lead: initiated</text>
+
+            <rect class="box2" x="552" y="362" width="124" height="230" rx="7"/>
+            <text class="sys" x="560" y="382">Booking now</text><text class="sys t-muted" x="560" y="397">awaits developer</text><text class="sys t-muted" x="560" y="412">Email to developer</text><text class="sys" x="560" y="442">Unit stays locked</text><text class="sys t-muted" x="560" y="457">nobody else can</text><text class="sys t-muted" x="560" y="472">hold or book it</text>
+
+            <rect class="box2" x="690" y="362" width="124" height="230" rx="7"/>
+            <text class="sys t-gold" x="698" y="382">Unit → BOOKED</text><text class="sys" x="698" y="397">5 instalments</text><text class="sys t-muted" x="698" y="412">sum to the rupee</text><text class="sys" x="698" y="427">3 commission lines</text><text class="sys t-muted" x="698" y="442">rates frozen</text><text class="sys" x="698" y="457">Lead → booked</text><text class="sys t-muted" x="698" y="472">buyer, partner and</text><text class="sys t-muted" x="698" y="487">developer notified</text>
+
+            <rect class="box2" x="828" y="362" width="124" height="230" rx="7"/>
+            <text class="sys" x="836" y="382">Money applied to</text><text class="sys t-muted" x="836" y="397">dues in order</text><text class="sys t-muted" x="836" y="412">same UTR refused</text><text class="sys" x="836" y="442">At 20% collected:</text><text class="sys t-gold" x="836" y="457">booking →</text><text class="sys t-gold" x="836" y="472">agreement</text><text class="sys t-gold" x="836" y="487">unit → SOLD</text><text class="sys t-gold" x="836" y="502">commission earned</text>
+
+            <rect class="box2" x="966" y="362" width="124" height="230" rx="7"/>
+            <text class="sys" x="974" y="382">soleX fee:</text><text class="sys t-muted" x="974" y="397">invoiced, received</text><text class="sys" x="974" y="427">Partner brokerage:</text><text class="sys t-muted" x="974" y="442">management</text><text class="sys t-muted" x="974" y="457">approves, finance</text><text class="sys t-muted" x="974" y="472">pays</text><text class="sys" x="974" y="502">Staff incentive:</text><text class="sys t-muted" x="974" y="517">same two steps</text>
+
+            <rect class="box2" x="1104" y="362" width="124" height="230" rx="7"/>
+            <text class="sys" x="1112" y="382">Nothing re-keyed.</text><text class="sys t-muted" x="1112" y="397">Every number is</text><text class="sys t-muted" x="1112" y="412">computed from</text><text class="sys t-muted" x="1112" y="427">these same rows</text><text class="sys t-muted" x="1112" y="442">when a screen</text><text class="sys t-muted" x="1112" y="457">opens.</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption><strong>One record, passed along.</strong> The partner's registration is the lead the exec works. The exec's booking is the inventory change management approves. The receipts finance records are what release the commission. If a discount is within 1%, steps 4 and 5 disappear and step 3 confirms the booking immediately; between 1% and 3%, only step 4 is needed. <strong>Cancellation</strong> (any time after step 5) runs the reverse in one transaction: unit available again, open dues cancelled, unpaid commission reversed, paid commission clawed back, refund worked out under the mandate's forfeiture term.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 4 ─────────────────────────────────────────────── -->
+  <section id="data">
+    <h2><span class="n">04</span>Data model: the mandate at the centre</h2>
+    <p class="intro">soleX is not a broker. Its unit of business is the mandate, the contract with a developer, so every unit, booking and commission line points back to one.</p>
+    <figure>
+      <div class="frame">
+        <svg class="dg w800" viewBox="0 0 1000 462" role="img" aria-label="A developer owns projects and signs mandates. A project is sold under a mandate and contains units; the mandate appoints which units soleX may sell. A partner registers leads; a lead converts to a booking for a customer. The booking is governed by the mandate, locks exactly one unit and generates the instalments, payments and commission lines.">
+          <defs>
+            <marker id="m4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk"/></marker>
+          </defs>
+          <rect class="box" x="40" y="30" width="200" height="60" rx="8"/><text class="ti" x="140" y="56" text-anchor="middle">Developer</text><text class="sub" x="140" y="75" text-anchor="middle">builder company</text>
+          <rect class="box" x="400" y="30" width="200" height="60" rx="8"/><text class="ti" x="500" y="56" text-anchor="middle">Channel partner</text><text class="sub" x="500" y="75" text-anchor="middle">authorised per project</text>
+          <rect class="box" x="760" y="30" width="200" height="60" rx="8"/><text class="ti" x="860" y="56" text-anchor="middle">Lead</text><text class="sub" x="860" y="75" text-anchor="middle">source · stage · owner</text>
+
+          <rect class="box" x="40" y="190" width="200" height="60" rx="8"/><text class="ti" x="140" y="216" text-anchor="middle">Project</text><text class="sub" x="140" y="235" text-anchor="middle">RERA no · payment plan</text>
+          <rect class="hl" x="400" y="176" width="200" height="88" rx="8"/><text class="ti" x="500" y="200" text-anchor="middle">Mandate</text><text class="sub" x="500" y="218" text-anchor="middle">term · target units</text><text class="sub" x="500" y="233" text-anchor="middle">fee + tier · brokerage</text><text class="sub" x="500" y="248" text-anchor="middle">bands · 20% trigger</text>
+          <rect class="box" x="760" y="190" width="200" height="60" rx="8"/><text class="ti" x="860" y="216" text-anchor="middle">Booking</text><text class="sub" x="860" y="235" text-anchor="middle">price snapshot · status</text>
+
+          <rect class="box" x="40" y="350" width="200" height="60" rx="8"/><text class="ti" x="140" y="376" text-anchor="middle">Unit</text><text class="sub" x="140" y="395" text-anchor="middle">status · version · price</text>
+          <rect class="box" x="400" y="350" width="200" height="60" rx="8"/><text class="ti" x="500" y="376" text-anchor="middle">Customer</text><text class="sub" x="500" y="395" text-anchor="middle">can hold several bookings</text>
+          <rect class="box" x="760" y="350" width="200" height="60" rx="8"/><text class="ti" x="860" y="373" text-anchor="middle">Money</text><text class="sub" x="860" y="390" text-anchor="middle">instalments · payments</text><text class="sub" x="860" y="403" text-anchor="middle">commission lines</text>
+
+          <line class="edge" x1="140" y1="90" x2="140" y2="187" marker-end="url(#m4)"/><text class="lab" x="149" y="143">owns</text>
+          <line class="edge" x1="240" y1="80" x2="398" y2="186" marker-end="url(#m4)"/><text class="lab" x="330" y="122">signs</text>
+          <line class="edge" x1="240" y1="220" x2="397" y2="220" marker-end="url(#m4)"/><text class="lab" x="318" y="212" text-anchor="middle">sold under</text>
+          <line class="edge" x1="140" y1="250" x2="140" y2="347" marker-end="url(#m4)"/><text class="lab" x="149" y="303">contains</text>
+          <line class="edge gold" x1="410" y1="264" x2="242" y2="356" marker-end="url(#m4)"/><text class="lab t-gold" x="322" y="330">appoints</text>
+          <line class="edge" x1="600" y1="60" x2="757" y2="60" marker-end="url(#m4)"/><text class="lab" x="678" y="52" text-anchor="middle">registers</text>
+          <line class="edge" x1="860" y1="90" x2="860" y2="187" marker-end="url(#m4)"/><text class="lab" x="869" y="143">converts to</text>
+          <line class="edge" x1="760" y1="220" x2="603" y2="220" marker-end="url(#m4)"/><text class="lab" x="681" y="212" text-anchor="middle">governed by</text>
+          <line class="edge" x1="764" y1="250" x2="602" y2="358" marker-end="url(#m4)"/><text class="lab" x="676" y="330">for</text>
+          <line class="edge" x1="860" y1="250" x2="860" y2="347" marker-end="url(#m4)"/><text class="lab" x="869" y="303">generates</text>
+          <path class="edge" d="M760 236 H715 V440 H140 V413" marker-end="url(#m4)"/><text class="lab" x="430" y="434" text-anchor="middle">locks exactly one unit</text>
+        </svg>
+      </div>
+      <figcaption><strong>The mandate decides what may be sold, and on what terms.</strong> A unit with no mandate is retained by the developer and cannot be held or booked by soleX (tower C of Aravali Greens in the demo). The booking copies the price breakdown and each commission line copies its rate at the moment it is created, so a later price or contract change never rewrites what was already agreed. Staff, sessions, site visits, activities and the audit log hang off these records and are left out for clarity.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 5 ─────────────────────────────────────────────── -->
+  <section id="states">
+    <h2><span class="n">05</span>Linked status changes</h2>
+    <p class="intro">Lead, unit, booking and commission each have a fixed set of allowed moves. The events across the top move all four at once, in a single transaction, so they can never fall out of step.</p>
+    <figure>
+      <div class="frame">
+        <svg class="dg w900" viewBox="0 0 1010 372" role="img" aria-label="Four status tracks. When the exec books with a discount, the lead becomes booking initiated, the unit gets an approval lock and the booking awaits approval. On final approval the lead and unit become booked, the booking is confirmed and commission is accrued. When 20 percent is collected the unit is sold, the booking reaches agreement and commission is earned. When management cancels, the lead is lost, the unit is available again, the booking is cancelled and commission is reversed or clawed back.">
+          <defs>
+            <marker id="m5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk"/></marker>
+          </defs>
+          <rect class="band" x="286" y="44" width="168" height="278" rx="8"/>
+          <rect class="band" x="466" y="44" width="168" height="278" rx="8"/>
+          <rect class="band" x="646" y="44" width="168" height="278" rx="8"/>
+          <rect class="band" x="826" y="44" width="168" height="278" rx="8"/>
+          <text class="lab" x="190" y="28" text-anchor="middle">before</text>
+          <text class="sub t-gold" x="370" y="28" text-anchor="middle">exec books with discount</text>
+          <text class="sub t-gold" x="550" y="28" text-anchor="middle">final approval</text>
+          <text class="sub t-gold" x="730" y="28" text-anchor="middle">20% of value collected</text>
+          <text class="sub t-gold" x="910" y="28" text-anchor="middle">management cancels</text>
+
+          <text class="lane" x="12" y="85">Lead</text>
+          <text class="lane" x="12" y="155">Unit</text>
+          <text class="lane" x="12" y="225">Booking</text>
+          <text class="lane" x="12" y="295">Commission</text>
+
+          <!-- Lead -->
+          <rect class="box" x="115" y="61" width="150" height="38" rx="7"/><text x="190" y="85" text-anchor="middle">visit done</text>
+          <rect class="box" x="295" y="61" width="150" height="38" rx="7"/><text x="370" y="85" text-anchor="middle">booking initiated</text>
+          <rect class="box" x="475" y="61" width="150" height="38" rx="7"/><text x="550" y="85" text-anchor="middle">booked</text>
+          <text class="sub" x="730" y="70" text-anchor="middle">stays booked</text>
+          <rect class="box" x="835" y="61" width="150" height="38" rx="7"/><text x="910" y="85" text-anchor="middle">lost (reason kept)</text>
+          <line class="edge" x1="265" y1="80" x2="292" y2="80" marker-end="url(#m5)"/>
+          <line class="edge" x1="445" y1="80" x2="472" y2="80" marker-end="url(#m5)"/>
+          <line class="edge" x1="625" y1="80" x2="832" y2="80" marker-end="url(#m5)"/>
+
+          <!-- Unit -->
+          <rect class="box" x="115" y="131" width="150" height="38" rx="7"/><text x="190" y="155" text-anchor="middle">available / held</text>
+          <rect class="hl" x="295" y="131" width="150" height="38" rx="7"/><text x="370" y="155" text-anchor="middle">approval lock</text>
+          <rect class="hl" x="475" y="131" width="150" height="38" rx="7"/><text x="550" y="155" text-anchor="middle">booked</text>
+          <rect class="hl" x="655" y="131" width="150" height="38" rx="7"/><text x="730" y="155" text-anchor="middle">sold</text>
+          <rect class="box" x="835" y="131" width="150" height="38" rx="7"/><text x="910" y="155" text-anchor="middle">available again</text>
+          <line class="edge" x1="265" y1="150" x2="292" y2="150" marker-end="url(#m5)"/>
+          <line class="edge" x1="445" y1="150" x2="472" y2="150" marker-end="url(#m5)"/>
+          <line class="edge" x1="625" y1="150" x2="652" y2="150" marker-end="url(#m5)"/>
+          <line class="edge" x1="805" y1="150" x2="832" y2="150" marker-end="url(#m5)"/>
+
+          <!-- Booking -->
+          <text class="sub" x="190" y="225" text-anchor="middle">none yet</text>
+          <rect class="box" x="295" y="201" width="150" height="38" rx="7"/><text x="370" y="225" text-anchor="middle">awaiting approval</text>
+          <rect class="box" x="475" y="201" width="150" height="38" rx="7"/><text x="550" y="225" text-anchor="middle">confirmed</text>
+          <rect class="box" x="655" y="201" width="150" height="38" rx="7"/><text x="730" y="225" text-anchor="middle">agreement</text>
+          <rect class="warnbox" x="835" y="201" width="150" height="38" rx="7"/><text x="910" y="225" text-anchor="middle">cancelled</text>
+          <line class="edge" x1="445" y1="220" x2="472" y2="220" marker-end="url(#m5)"/>
+          <line class="edge" x1="625" y1="220" x2="652" y2="220" marker-end="url(#m5)"/>
+          <line class="edge" x1="805" y1="220" x2="832" y2="220" marker-end="url(#m5)"/>
+
+          <!-- Commission -->
+          <text class="sub" x="370" y="295" text-anchor="middle">none until confirmed</text>
+          <rect class="box" x="475" y="271" width="150" height="38" rx="7"/><text x="550" y="295" text-anchor="middle">accrued ×3</text>
+          <rect class="okbox" x="655" y="271" width="150" height="38" rx="7"/><text x="730" y="295" text-anchor="middle">earned → settled</text>
+          <rect class="warnbox" x="835" y="271" width="150" height="38" rx="7"/><text x="910" y="295" text-anchor="middle">reversed / clawback</text>
+          <line class="edge" x1="625" y1="290" x2="652" y2="290" marker-end="url(#m5)"/>
+          <line class="edge" x1="805" y1="290" x2="832" y2="290" marker-end="url(#m5)"/>
+
+          <text class="sub" x="370" y="345" text-anchor="middle">one transaction</text>
+          <text class="sub" x="550" y="345" text-anchor="middle">one transaction</text>
+          <text class="sub" x="730" y="345" text-anchor="middle">one transaction</text>
+          <text class="sub" x="910" y="345" text-anchor="middle">one transaction</text>
+        </svg>
+      </div>
+      <figcaption><strong>Read down a column to see a dependency.</strong> A unit is only "sold" when its booking reaches agreement, and that happens only when 20% of the price has actually been collected. Commission is never earned on a booking that might still fall through. Any move not drawn here (sold back to booked, paid back to accrued) is rejected. If a discount is rejected instead of approved, the unit returns to available and the lead goes back to negotiation. A live check re-verifies all of these links on every load of the Activity screen.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 6 ─────────────────────────────────────────────── -->
+  <section id="race">
+    <h2><span class="n">06</span>Why a unit cannot be sold twice</h2>
+    <p class="intro">Two execs click "Book" on the same unit in the same second. Both were looking at version 7 of it. Only one can win, and the loser's attempt leaves no trace.</p>
+    <figure>
+      <div class="frame">
+        <svg class="dg w800" viewBox="0 0 1000 470" role="img" aria-label="Sara and Arjun both ask to book unit A-1003 having seen version 7. Sara's transaction updates the unit only where the version is still 7, which changes one row, then inserts the booking and commits. Arjun's identical update now changes zero rows because the unit is at version 8, so his transaction is rolled back and he sees a conflict message.">
+          <defs>
+            <marker id="m6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk"/></marker>
+            <marker id="m6o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk-ok"/></marker>
+            <marker id="m6w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk-warn"/></marker>
+          </defs>
+          <rect class="band" x="470" y="150" width="430" height="166" rx="8"/>
+          <text class="sub t-gold" x="890" y="166" text-anchor="end">Sara's transaction</text>
+          <rect class="band" x="470" y="354" width="430" height="64" rx="8"/>
+          <text class="sub t-warn" x="890" y="370" text-anchor="end">Arjun's · rolled back</text>
+
+          <rect class="box" x="30" y="16" width="120" height="36" rx="7"/><text class="ti" x="90" y="39" text-anchor="middle">Sara</text>
+          <rect class="box" x="190" y="16" width="120" height="36" rx="7"/><text class="ti" x="250" y="39" text-anchor="middle">Arjun</text>
+          <rect class="box" x="420" y="16" width="200" height="36" rx="7"/><text class="ti" x="520" y="39" text-anchor="middle">booking service</text>
+          <rect class="hl" x="760" y="16" width="180" height="36" rx="7"/><text class="ti" x="850" y="39" text-anchor="middle">database</text>
+          <line class="life" x1="90" y1="52" x2="90" y2="455"/>
+          <line class="life" x1="250" y1="52" x2="250" y2="455"/>
+          <line class="life" x1="520" y1="52" x2="520" y2="455"/>
+          <line class="life" x1="850" y1="52" x2="850" y2="455"/>
+
+          <line class="edge" x1="90" y1="90" x2="517" y2="90" marker-end="url(#m6)"/><text class="lab" x="305" y="83" text-anchor="middle">book A-1003 · I saw version 7</text>
+          <line class="edge" x1="250" y1="125" x2="517" y2="125" marker-end="url(#m6)"/><text class="lab" x="385" y="118" text-anchor="middle">book A-1003 · I saw version 7</text>
+
+          <line class="edge" x1="520" y1="190" x2="847" y2="190" marker-end="url(#m6)"/><text class="lab" x="685" y="183" text-anchor="middle">UPDATE unit WHERE version = 7 AND free</text>
+          <line class="edge ok" x1="850" y1="220" x2="523" y2="220" marker-end="url(#m6o)"/><text class="lab t-ok" x="685" y="213" text-anchor="middle">1 row changed · now version 8</text>
+          <line class="edge" x1="520" y1="268" x2="847" y2="268" marker-end="url(#m6)"/><text class="lab" x="685" y="246" text-anchor="middle">INSERT booking (unit lock key is unique)</text><text class="lab" x="685" y="261" text-anchor="middle">+ schedule · commission · audit · outbox</text>
+          <line class="edge ok" x1="850" y1="300" x2="523" y2="300" marker-end="url(#m6o)"/><text class="lab t-ok" x="685" y="293" text-anchor="middle">COMMIT</text>
+          <line class="edge ok" x1="520" y1="338" x2="93" y2="338" marker-end="url(#m6o)"/><text class="lab t-ok" x="305" y="331" text-anchor="middle">booking confirmed</text>
+
+          <line class="edge" x1="520" y1="388" x2="847" y2="388" marker-end="url(#m6)"/><text class="lab" x="685" y="384" text-anchor="middle">same UPDATE WHERE version = 7</text>
+          <line class="edge warn" x1="850" y1="410" x2="523" y2="410" marker-end="url(#m6w)"/><text class="lab t-warn" x="685" y="405" text-anchor="middle">0 rows changed</text>
+          <line class="edge warn" x1="520" y1="444" x2="253" y2="444" marker-end="url(#m6w)"/><text class="lab t-warn" x="385" y="437" text-anchor="middle">conflict: unit changed, nothing written</text>
+        </svg>
+      </div>
+      <figcaption><strong>Four guards, in order.</strong> (1) The update only applies if the unit is still at the version the user saw. (2) It only applies if the unit is in a state that allows booking (available, an expired hold, or the user's own hold). (3) A live booking stores the unit in a column the database keeps unique, so even a coding mistake could not create a second one. (4) The whole booking, schedule, commission, audit entry and message commit together or not at all. This exact race is tested with two real browser sessions.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 7 ─────────────────────────────────────────────── -->
+  <section id="access">
+    <h2><span class="n">07</span>Who sees what</h2>
+    <p class="intro">Every request passes four checks on the server. Each check stops a different kind of overreach; the examples underneath are real cases the tests try.</p>
+    <figure>
+      <div class="frame">
+        <svg class="dg w800" viewBox="0 0 1000 246" role="img" aria-label="A request passes a surface gate, a permission check, a row scope and a field projection. Examples: a partner opening the command centre is sent to the partner portal; a sales exec trying to cancel is refused; a developer asking for another developer's project gets not found; a developer sees channel partner but not the partner's name or brokerage.">
+          <defs>
+            <marker id="m7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="mk"/></marker>
+          </defs>
+          <rect class="box2" x="10" y="64" width="96" height="40" rx="20"/><text class="ti" x="58" y="89" text-anchor="middle">request</text>
+          <line class="edge" x1="106" y1="84" x2="127" y2="84" marker-end="url(#m7)"/>
+          <rect class="box" x="130" y="50" width="195" height="68" rx="8"/><text class="ti" x="227" y="77" text-anchor="middle">1 · Surface gate</text><text class="sub" x="227" y="97" text-anchor="middle">right app for this role?</text>
+          <line class="edge" x1="325" y1="84" x2="342" y2="84" marker-end="url(#m7)"/>
+          <rect class="box" x="345" y="50" width="195" height="68" rx="8"/><text class="ti" x="442" y="77" text-anchor="middle">2 · Permission</text><text class="sub" x="442" y="97" text-anchor="middle">may this role do this action?</text>
+          <line class="edge" x1="540" y1="84" x2="557" y2="84" marker-end="url(#m7)"/>
+          <rect class="box" x="560" y="50" width="195" height="68" rx="8"/><text class="ti" x="657" y="77" text-anchor="middle">3 · Row scope</text><text class="sub" x="657" y="97" text-anchor="middle">only your projects and records</text>
+          <line class="edge" x1="755" y1="84" x2="772" y2="84" marker-end="url(#m7)"/>
+          <rect class="hl" x="775" y="50" width="195" height="68" rx="8"/><text class="ti" x="872" y="77" text-anchor="middle">4 · Field projection</text><text class="sub" x="872" y="97" text-anchor="middle">only the fields you may see</text>
+
+          <line class="dot" x1="227" y1="118" x2="227" y2="150"/><line class="dot" x1="442" y1="118" x2="442" y2="150"/><line class="dot" x1="657" y1="118" x2="657" y2="150"/><line class="dot" x1="872" y1="118" x2="872" y2="150"/>
+          <rect class="warnbox" x="130" y="150" width="195" height="64" rx="8"/><text class="sys" x="142" y="174">partner opens the</text><text class="sys" x="142" y="190">command centre</text><text class="sys t-warn" x="142" y="206">→ sent to own portal</text>
+          <rect class="warnbox" x="345" y="150" width="195" height="64" rx="8"/><text class="sys" x="357" y="174">sales exec tries to</text><text class="sys" x="357" y="190">cancel a booking</text><text class="sys t-warn" x="357" y="206">→ refused</text>
+          <rect class="warnbox" x="560" y="150" width="195" height="64" rx="8"/><text class="sys" x="572" y="174">developer A opens</text><text class="sys" x="572" y="190">developer B's project</text><text class="sys t-warn" x="572" y="206">→ "not found"</text>
+          <rect class="warnbox" x="775" y="150" width="195" height="64" rx="8"/><text class="sys" x="787" y="174">developer opens a sale</text><text class="sys" x="787" y="190">by a partner</text><text class="sys t-warn" x="787" y="206">→ no name, no brokerage</text>
+        </svg>
+      </div>
+      <figcaption><strong>"Not found", not "forbidden".</strong> A record outside your scope looks exactly like a record that does not exist, so the system never confirms that something is there. These checks run on the server for every page, action and download, never by hiding buttons in the browser.</figcaption>
+    </figure>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>What</th><th>soleX management</th><th>Sales exec</th><th>Finance</th><th>Channel partner</th><th>Developer</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Projects</td><td>all</td><td>allocated only</td><td>all</td><td>authorised only</td><td>own only</td></tr>
+          <tr><td>Inventory</td><td>all, with who holds</td><td>allocated projects</td><td>all</td><td>soleX units, shown as available or not</td><td>whole project, incl. units it kept back</td></tr>
+          <tr><td>Leads</td><td>all</td><td>own leads</td><td class="no">none</td><td>own registrations, stage only</td><td>totals only</td></tr>
+          <tr><td>Which partner made a sale</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td>own sales only</td><td class="no">"Channel partner" only</td></tr>
+          <tr><td>soleX fee</td><td class="yes">yes</td><td class="no">no</td><td class="yes">yes</td><td class="no">never</td><td class="yes">yes (they pay it)</td></tr>
+          <tr><td>Brokerage, staff incentive</td><td class="yes">yes</td><td>own incentive</td><td class="yes">yes</td><td>own brokerage</td><td class="no">never</td></tr>
+          <tr><td>Customer phone and email</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td>only what they registered</td><td class="no">never</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 8 ─────────────────────────────────────────────── -->
+  <section id="effects">
+    <h2><span class="n">08</span>What updates when</h2>
+    <p class="intro">The dependencies in plain terms: one action on the left, everything that changes with it on the right, all in the same transaction. Nobody has to tell another team.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>When this happens</th><th>These change automatically</th><th>Who sees it straight away</th></tr></thead>
+        <tbody>
+          <tr><td>Partner registers a buyer</td><td>Lead created with source and partner · 90-day attribution · duplicate check · exec auto-assigned · WhatsApp to exec</td><td>Partner (my customers), exec (my leads), management (funnel, partner table)</td></tr>
+          <tr><td>Exec logs a call or visit</td><td>Lead stage · last contact · next follow-up · visit record · WhatsApp to buyer</td><td>Partner (stage), management (follow-up alerts, funnel)</td></tr>
+          <tr><td>Exec books a unit</td><td>Unit locked or booked · customer created · price snapshot · lead stage · approval request if over 1%</td><td>Everyone's stacking plan, management approvals queue</td></tr>
+          <tr><td>Final approval</td><td>Unit booked · 5-instalment schedule · fee, brokerage and incentive lines (rates frozen) · lead booked · buyer, partner and developer notified</td><td>Developer portal (booking, fee owed), command centre (absorption, sold value)</td></tr>
+          <tr><td>Finance records a receipt</td><td>Instalments paid in order · overdue alert clears · at 20%: booking to agreement, unit sold, all three commission lines earned</td><td>Command centre (collected, net margin), partner (brokerage earned), developer (fee payable)</td></tr>
+          <tr><td>Commission settled</td><td>Fee invoiced then received · brokerage approved (management) then paid (finance) · partner emailed</td><td>Finance ledger, partner statement, developer fee statement</td></tr>
+          <tr><td>Booking cancelled</td><td>Unit available · open dues cancelled · unpaid commission reversed, paid commission clawed back · refund due under forfeiture term · lead lost</td><td>Every stacking plan, refunds list, partner statement (recovery), developer portal</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cols">
+      <div class="card">
+        <h3>Working in the demo</h3>
+        <ul>
+          <li>Sign-in, roles, permissions and data separation</li>
+          <li>Leads, attribution, duplicate blocking, visits</li>
+          <li>Holds, bookings, two-level approvals, cancellations</li>
+          <li>Schedules, receipts, the 20% trigger, the commission ledger</li>
+          <li>Command centre, partner and developer portals, CSV export</li>
+          <li>Audit trail and live integrity checks</li>
+        </ul>
+      </div>
+      <div class="card sim">
+        <h3>Simulated, by design</h3>
+        <ul>
+          <li>WhatsApp, email and SMS: written to an outbox, never sent</li>
+          <li>Payment gateway: finance types in the receipt</li>
+          <li>Accounting and ERP posting, GST and TDS</li>
+          <li>Partner brochure downloads</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Why one app, not many services</h3>
+        <ul>
+          <li>A booking must change four modules together; one database transaction does that simply</li>
+          <li>One deployment and one team to run it</li>
+          <li>Module boundaries are already clean, so messaging, reporting or integrations can move out later without a rewrite</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>soleX Round 2 evaluation demo · fictional data · figures drawn from the working code in this repository (src/modules, prisma/schema.prisma).</footer>
+</div>
