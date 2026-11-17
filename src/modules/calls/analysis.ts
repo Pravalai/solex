@@ -1,5 +1,5 @@
 import { formatDuration } from "@/lib/format";
-import type { CallLine, Insight, InsightCategory, Polarity } from "./types";
+import type { CallLine, Insight, InsightCategory, NextAction, Polarity } from "./types";
 
 /**
  * Rule-based call analysis: no AI. Each rule is a phrase pattern applied to what
@@ -8,7 +8,8 @@ import type { CallLine, Insight, InsightCategory, Polarity } from "./types";
  * would slot in, returning the same `CallAnalysis` shape.
  */
 
-type FollowUp = { priority: number; days: number; step: string };
+/** `action` is what the UI offers as a one-click button; `step` is the same advice in words. */
+type FollowUp = { action: NextAction; priority: number; days: number; step: string };
 
 type Rule = {
   key: string;
@@ -31,7 +32,7 @@ const RULES: Rule[] = [
     pattern: /\bnot interested\b|\bjust (exploring|browsing)\b/i,
     text: "Low buying intent right now",
     weight: 2,
-    followUp: { priority: 2, days: 14, step: "Move to nurture: share project updates and check back in two weeks." },
+    followUp: { action: { kind: "NURTURE" }, priority: 2, days: 14, step: "Move to nurture: share project updates and check back in two weeks." },
   },
   // Unit fit
   { key: "fit-good", category: "UNIT_FIT", polarity: "POSITIVE", pattern: /exactly what we need|layout (looked|looks|is) good/i, text: "Unit configuration fits their needs" },
@@ -45,7 +46,7 @@ const RULES: Rule[] = [
     polarity: "NEGATIVE",
     pattern: /above (our|my) budget|too expensive|out of (our|my) budget/i,
     text: "Price is above their budget",
-    followUp: { priority: 6, days: 2, step: "Prepare payment-plan options and check what discount is possible within your band." },
+    followUp: { action: { kind: "SEND_INFO", info: "PAYMENT_PLAN" }, priority: 6, days: 2, step: "Prepare payment-plan options and check what discount is possible within your band." },
   },
   { key: "budget-open", category: "PRICE", polarity: "NEUTRAL", pattern: /not fixed (our|the) budget|budget is flexible/i, text: "Budget not fixed yet" },
   { key: "discount-ask", category: "PRICE", polarity: "NEUTRAL", pattern: /(better|extra) discount/i, text: "Asked for a better discount" },
@@ -73,7 +74,7 @@ const RULES: Rule[] = [
     polarity: "NEGATIVE",
     pattern: /considering another project|another developer|quoted lower|better deal/i,
     text: "Evaluating a competing project",
-    followUp: { priority: 7, days: 2, step: "Send a side-by-side comparison with the competing project." },
+    followUp: { action: { kind: "SEND_INFO", info: "COMPARISON" }, priority: 7, days: 2, step: "Send a side-by-side comparison with the competing project." },
   },
   { key: "competition-open", category: "COMPETITION", polarity: "NEUTRAL", pattern: /couple of others|options open/i, text: "Has seen other projects, nothing final" },
   // Site visit and decision
@@ -83,7 +84,7 @@ const RULES: Rule[] = [
     polarity: "POSITIVE",
     pattern: /would like to visit|can visit on/i,
     text: "Agreed to a site visit",
-    followUp: { priority: 1, days: 1, step: "Schedule the site visit the customer agreed to and send directions on WhatsApp." },
+    followUp: { action: { kind: "SCHEDULE_VISIT" }, priority: 1, days: 1, step: "Schedule the site visit the customer agreed to and send directions on WhatsApp." },
   },
   {
     key: "visit-maybe",
@@ -91,7 +92,7 @@ const RULES: Rule[] = [
     polarity: "NEUTRAL",
     pattern: /let me check.*confirm/i,
     text: "Site visit not confirmed yet",
-    followUp: { priority: 5, days: 2, step: "Call to lock a site-visit slot." },
+    followUp: { action: { kind: "CALL_BACK" }, priority: 5, days: 2, step: "Call to lock a site-visit slot." },
   },
   { key: "visit-no", category: "VISIT", polarity: "NEGATIVE", pattern: /not planning a visit/i, text: "Not ready for a site visit" },
   {
@@ -100,7 +101,7 @@ const RULES: Rule[] = [
     polarity: "NEUTRAL",
     pattern: /discuss (it )?with my (family|wife|husband|parents)/i,
     text: "Decision involves the family",
-    followUp: { priority: 4, days: 3, step: "Follow up after the family discussion and offer a family site visit." },
+    followUp: { action: { kind: "CALL_BACK" }, priority: 4, days: 3, step: "Follow up after the family discussion and offer a family site visit." },
   },
   {
     key: "callback",
@@ -108,12 +109,12 @@ const RULES: Rule[] = [
     polarity: "NEUTRAL",
     pattern: /call me back next week/i,
     text: "Asked for a call back next week",
-    followUp: { priority: 3, days: 7, step: "Call back next week as requested." },
+    followUp: { action: { kind: "CALL_BACK" }, priority: 3, days: 7, step: "Call back next week as requested." },
   },
 ];
 
-const DEFAULT_FOLLOW_UP: FollowUp = { priority: 99, days: 2, step: "Share the brochure and price sheet, then follow up." };
-const INCOMPLETE_FOLLOW_UP: FollowUp = { priority: 0, days: 1, step: "Call again to complete the conversation." };
+const DEFAULT_FOLLOW_UP: FollowUp = { action: { kind: "SEND_INFO", info: "BROCHURE" }, priority: 99, days: 2, step: "Share the brochure and price sheet, then follow up." };
+const INCOMPLETE_FOLLOW_UP: FollowUp = { action: { kind: "RETRY" }, priority: 0, days: 1, step: "Call again to complete the conversation." };
 
 export type CallAnalysis = {
   insights: Insight[];
@@ -123,6 +124,7 @@ export type CallAnalysis = {
   /** Share of words spoken by the exec, 0–100. A coaching signal: good calls let the customer talk. */
   execTalkPct: number;
   nextStep: string;
+  nextAction: NextAction;
   followUpDays: number;
   summary: string;
 };
@@ -132,18 +134,31 @@ export type AnalysisContext = { customerName: string; projectName: string; confi
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
-export function extractInsights(lines: CallLine[]): Insight[] {
+/** Each rule fires at most once per call, on the first customer line that matches it. */
+function matchRules(lines: CallLine[]): { rule: Rule; line: CallLine }[] {
   const seen = new Set<string>();
-  const out: Insight[] = [];
+  const out: { rule: Rule; line: CallLine }[] = [];
   for (const line of lines) {
     if (line.speaker !== "CUSTOMER") continue;
     for (const rule of RULES) {
       if (seen.has(rule.key) || !rule.pattern.test(line.text)) continue;
       seen.add(rule.key);
-      out.push({ polarity: rule.polarity, category: rule.category, text: rule.text, quote: line.text, atSec: line.at });
+      out.push({ rule, line });
     }
   }
   return out;
+}
+
+const toInsight = ({ rule, line }: { rule: Rule; line: CallLine }): Insight => ({
+  polarity: rule.polarity,
+  category: rule.category,
+  text: rule.text,
+  quote: line.text,
+  atSec: line.at,
+});
+
+export function extractInsights(lines: CallLine[]): Insight[] {
+  return matchRules(lines).map(toInsight);
 }
 
 export function analyzeTranscript(lines: CallLine[], ctx: AnalysisContext): CallAnalysis {
@@ -161,19 +176,21 @@ export function analyzeTranscript(lines: CallLine[], ctx: AnalysisContext): Call
       interestScore: 3,
       execTalkPct,
       nextStep: INCOMPLETE_FOLLOW_UP.step,
+      nextAction: INCOMPLETE_FOLLOW_UP.action,
       followUpDays: INCOMPLETE_FOLLOW_UP.days,
       summary: `Call with ${first} ended after ${formatDuration(ctx.talkSec)}, before their requirements were discussed. Next step: ${INCOMPLETE_FOLLOW_UP.step}`,
     };
   }
 
-  const insights = extractInsights(lines);
-  const weightOf = (i: Insight) => RULES.find((r) => r.text === i.text)?.weight ?? 1;
-  const score = insights.reduce((s, i) => s + (i.polarity === "POSITIVE" ? weightOf(i) : i.polarity === "NEGATIVE" ? -weightOf(i) : 0), 0);
+  const matches = matchRules(lines);
+  const insights = matches.map(toInsight);
+  const sign = { POSITIVE: 1, NEGATIVE: -1, NEUTRAL: 0 } as const;
+  const score = matches.reduce((s, { rule }) => s + sign[rule.polarity] * (rule.weight ?? 1), 0);
   const sentiment: Polarity = score >= 2 ? "POSITIVE" : score <= -2 ? "NEGATIVE" : "NEUTRAL";
   const interestScore = Math.min(5, Math.max(1, Math.round(3 + score / 2)));
 
-  const followUp = insights
-    .map((i) => RULES.find((r) => r.text === i.text)?.followUp)
+  const followUp = matches
+    .map(({ rule }) => rule.followUp)
     .filter((f): f is FollowUp => !!f)
     .reduce((best, f) => (f.priority < best.priority ? f : best), DEFAULT_FOLLOW_UP);
 
@@ -190,6 +207,7 @@ export function analyzeTranscript(lines: CallLine[], ctx: AnalysisContext): Call
     interestScore,
     execTalkPct,
     nextStep: followUp.step,
+    nextAction: followUp.action,
     followUpDays: followUp.days,
     summary: parts.join(" "),
   };

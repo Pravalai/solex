@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Info } from "lucide-react";
 import { formatINR, formatINRCompact } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -108,6 +108,42 @@ export function Section({
       </div>
       <div className="p-4">{children}</div>
     </section>
+  );
+}
+
+/** A small "i" that explains a rule or a figure on hover/focus, instead of a paragraph on the page. */
+export function InfoTip({ children, className, label = "How this works" }: { children: React.ReactNode; className?: string; label?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" aria-label={label} className={cn("inline-flex shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:text-foreground", className)}>
+          <Info className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72 text-xs leading-relaxed">{children}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** URL-driven tabs (server rendered, shareable, survive refresh). */
+export function TabLinks({ tabs, active, className }: { tabs: { key: string; label: React.ReactNode; href: string; count?: number }[]; active: string; className?: string }) {
+  return (
+    <nav className={cn("flex flex-wrap gap-1", className)}>
+      {tabs.map((t) => (
+        <Link
+          key={t.key}
+          href={t.href}
+          aria-current={active === t.key ? "page" : undefined}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors",
+            active === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+        >
+          {t.label}
+          {t.count ? <span className={cn("rounded-full px-1.5 text-[11px] font-semibold tabular", active === t.key ? "bg-white/20" : "bg-muted text-foreground")}>{t.count}</span> : null}
+        </Link>
+      ))}
+    </nav>
   );
 }
 

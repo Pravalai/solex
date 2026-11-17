@@ -3,7 +3,7 @@ import { loginAs, newSession } from "./helpers";
 
 test("a second partner cannot claim an already-registered customer, and learns nothing about who has it", async ({ page }) => {
   await loginAs(page, "ishita@urbankey.demo");
-  await page.goto("/broker/leads");
+  await page.goto("/broker");
   await page.locator("#projectId").selectOption({ label: "Aravali Greens" });
   await page.locator("#name").fill("Aditi Sharma");
   await page.locator("#phone").fill("+91 98100 12345"); // registered by Prime Estates in the seed
@@ -11,6 +11,9 @@ test("a second partner cannot claim an already-registered customer, and learns n
   const error = page.getByTestId("form-error");
   await expect(error).toContainText("already registered");
   await expect(error).not.toContainText(/Prime|AGR-L|Arjun|Sara/);
+  // Neither the home feed nor the customer list reveals anything about the other partner's customer.
+  await expect(page.locator("main")).not.toContainText("Aditi Sharma");
+  await page.goto("/broker/leads");
   await expect(page.getByTestId("broker-leads")).not.toContainText("Aditi Sharma");
 });
 

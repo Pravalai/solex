@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { formToObject, runAction, type ActionResult } from "@/lib/action";
+import { formToObject, runAction, runDataAction, type ActionResult, type DataResult } from "@/lib/action";
+import { endCall, startCall } from "@/modules/calls/calls";
+import type { CallOutcome, CallSession } from "@/modules/calls/types";
 import { requireActor } from "@/modules/identity/session";
 import { INTERNAL_ROLES } from "@/modules/identity/roles";
 import { holdUnit, releaseHold } from "@/modules/inventory/units";
@@ -11,14 +13,16 @@ import {
   MANUAL_STAGES,
   changeLeadStage,
   completeVisit,
+  confirmVisit,
   createLead,
   logActivity,
   markNoShow,
   reassignLead,
   scheduleVisit,
+  sendLeadMessage,
 } from "@/modules/crm/leads";
 import { approveBooking, cancelBooking, createBooking, rejectBooking } from "@/modules/sales/bookings";
-import { PAYMENT_MODES, recordPayment } from "@/modules/finance/payments";
+import { PAYMENT_MODES, recordPayment, sendPaymentReminder } from "@/modules/finance/payments";
 import { settleCommission } from "@/modules/finance/commissions";
 
 const id = z.string().min(1);
@@ -160,6 +164,16 @@ export async function changeStageAction(form: FormData): Promise<ActionResult> {
   });
 }
 
+export async function sendLeadMessageAction(form: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await internalActor();
+    const input = z.object({ leadId: id, body: z.string({ error: "Write the message before sending it." }) }).parse(formToObject(form));
+    await sendLeadMessage(actor, input.leadId, { body: input.body });
+    refresh();
+    return "WhatsApp sent (simulated) and logged on the timeline.";
+  });
+}
+
 export async function reassignLeadAction(form: FormData): Promise<ActionResult> {
   return runAction(async () => {
     const actor = await internalActor();
@@ -167,6 +181,24 @@ export async function reassignLeadAction(form: FormData): Promise<ActionResult> 
     await reassignLead(actor, input.leadId, input.userId);
     refresh();
     return "Lead reassigned.";
+  });
+}
+
+// ------------------------------------------------------- calls (simulated)
+export async function startCallAction(leadId: string): Promise<DataResult<CallSession>> {
+  return runDataAction(async () => {
+    const actor = await internalActor();
+    return startCall(actor, id.parse(leadId));
+  });
+}
+
+export async function endCallAction(input: { callId: string; talkSec: number | null }): Promise<DataResult<CallOutcome>> {
+  return runDataAction(async () => {
+    const actor = await internalActor();
+    const parsed = z.object({ callId: id, talkSec: z.number().min(0).max(3600).nullable() }).parse(input);
+    const outcome = await endCall(actor, parsed.callId, { talkSec: parsed.talkSec });
+    refresh();
+    return outcome;
   });
 }
 
@@ -179,6 +211,18 @@ export async function scheduleVisitAction(form: FormData): Promise<ActionResult>
     await scheduleVisit(actor, input.leadId, { scheduledAt: input.scheduledAt, note: input.note });
     refresh();
     return "Site visit scheduled. Confirmation sent to the customer (simulated WhatsApp).";
+  });
+}
+
+export async function confirmVisitAction(form: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await internalActor();
+    const input = z
+      .object({ visitId: id, scheduledAt: z.string({ error: "Pick a date and time." }).transform((v) => new Date(v)) })
+      .parse(formToObject(form));
+    await confirmVisit(actor, input.visitId, { scheduledAt: input.scheduledAt });
+    refresh();
+    return "Visit confirmed. Customer and partner notified (simulated WhatsApp).";
   });
 }
 
@@ -220,6 +264,16 @@ export async function recordPaymentAction(form: FormData): Promise<ActionResult>
     await recordPayment(actor, input);
     refresh();
     return "Payment recorded and allocated to instalments.";
+  });
+}
+
+export async function sendPaymentReminderAction(form: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await internalActor();
+    const { installmentId } = z.object({ installmentId: id }).parse(formToObject(form));
+    await sendPaymentReminder(actor, installmentId);
+    refresh();
+    return "Reminder sent to the customer (simulated WhatsApp).";
   });
 }
 

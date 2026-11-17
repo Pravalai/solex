@@ -4,7 +4,7 @@
 
 ## 1. What we built, in one paragraph
 
-A small but genuinely working **mandate sales operating system**. A channel partner registers a buyer in the partner portal. The lead is auto-assigned to a soleX sales exec, who logs calls, runs a site visit and books a unit from a live stacking plan. A discount beyond the exec's authority goes to soleX management, and beyond the mandate's band also to the developer, inside the developer portal. The unit is locked meanwhile, then booked. A payment schedule is generated from the project's payment plan. Finance records receipts; when collections cross the mandate's earning trigger, the booking reaches agreement stage, the unit is marked sold and the commission lines (soleX fee receivable, partner brokerage and staff incentive payable) become earned and can be settled. Cancellation reverses all of it. The command centre, partner portal and developer portal show the same records, each through its own lens. Every step is real code against a real database; only external messaging and payment rails are simulated.
+A small but genuinely working **mandate sales operating system**. A channel partner registers a buyer in the partner portal. The lead is auto-assigned to a soleX sales exec. The exec calls the customer from the lead page; the call is transcribed, summarised into positive, negative and neutral insights, and logged automatically. The exec then runs a site visit and books a unit from a live stacking plan. A discount beyond the exec's authority goes to soleX management, and beyond the mandate's band also to the developer, inside the developer portal. The unit is locked meanwhile, then booked. A payment schedule is generated from the project's payment plan. Finance records receipts; when collections cross the mandate's earning trigger, the booking reaches agreement stage, the unit is marked sold and the commission lines (soleX fee receivable, partner brokerage and staff incentive payable) become earned and can be settled. Cancellation reverses all of it. The command centre, partner portal and developer portal show the same records, each through its own lens. Every step is real code against a real database; only external messaging, payment rails and the call itself (telephony, transcription, summarisation) are simulated.
 
 ## 2. How we read the brief
 
@@ -102,7 +102,7 @@ erDiagram
 8. **Idempotent receipts:** a bank reference can be recorded once per booking.
 9. **Cancellation is a reversal, not a delete.** The unit is released, open instalments are cancelled, unsettled commission is reversed, settled commission gets a negative **clawback** line, and the refund due is computed under the mandate's forfeiture term.
 10. **Dashboards have no counters to drift.** Every figure is computed from the source rows.
-11. **Live integrity checker:** six invariants (one live booking per booked unit, lock key consistency, schedule = agreement value, receipts = payments, agreement only after the trigger, commission = base × rate and consistent with booking state). They are shown on *Activity & integrity* and asserted after every integration test and E2E journey.
+11. **Live integrity checker:** seven invariants (one live booking per booked unit, lock key consistency, schedule = agreement value, receipts = payments, agreement only after the trigger, commission = base × rate and consistent with booking state, every finished call logged exactly once on its own lead). They are shown on *Audit & integrity* (and surface at the top of the finance task list if any fails) and asserted after every integration test and E2E journey.
 
 ```mermaid
 sequenceDiagram
@@ -156,7 +156,10 @@ These rules are enforced by tests: 10 access-control integration tests, plus an 
 | Pain point (from the brief) | What the demo does |
 | --- | --- |
 | Manual coordination between teams | One record flows end to end: a partner's registration *is* the lead, the booking *is* the inventory change, the receipt *triggers* the commission. Nothing is re-keyed; notifications are generated automatically. |
-| No visibility across projects | Command centre with mandate health against pace, drill-down from every number, an attention rail (approvals, overdue collections, expiring mandates, refunds) and partner and sales-team performance. |
+| No visibility across projects | Command centre with mandate health against pace and drill-down from every number. Trend, funnel, source, partner and team analytics sit on a *Performance* tab. |
+| Screens full of numbers, little to act on | Every persona lands on a **task list** instead of a report: management's *Needs your decision*, the exec's *Today*, finance's *To do*, the partner's *Needs you* and update feed. Each item gives one line of reason from live data, names the rule that raised it (hover ⓘ), and is resolved in place: approve a discount, schedule or confirm a visit, call, record a receipt, send a reminder, raise an invoice. All rules are fixed and deterministic (no scoring model), and unit-tested. |
+| Call outcomes that nobody acts on | Each call ends with **one structured next step** (schedule the visit, send the payment plan or a comparison, call back, nurture), offered as a button in the call dialog, on the lead page and in the exec's list until it is done. Information to send comes as an editable WhatsApp **template** draft. |
+| Mandate risk spotted too late | The command centre turns pace into an instruction ("18 more bookings needed in 40 days, 3.1 a week; 6 leads at visit-done or negotiation") and shows **soleX fee held up by late payments**: overdue instalments whose collection would cross the earning trigger. |
 | Partner disputes over who brought the buyer | First-come attribution with a mandate-defined protection window, and server-side duplicate detection on a normalised phone number. Competing partners are told "already registered", never by whom. Attribution that lapsed before booking carries no brokerage. |
 | Discount leakage | Three-tier authority from the mandate: the exec's band, soleX management, then the developer. Live preview in the booking form; the unit is locked during approval. |
 | Commission errors and paying too early | Commission is earned only after the collection trigger (paid on money in, not on paper bookings); rates are frozen; approval and payment are separate duties; cancellations claw back. |
@@ -170,11 +173,13 @@ These rules are enforced by tests: 10 access-control integration tests, plus an 
 | Real (working code, tested) | Simulated / out of scope |
 | --- | --- |
 | Login, sessions, role gating, permissions, data scoping | WhatsApp/email/SMS delivery: messages are written to an outbox shown on *Activity*, marked "Simulated" |
-| Lead capture, duplicate and attribution protection, auto-assignment, activities, visits | Payment gateway: receipts are entered by finance (as with bank statements today) |
+| Lead capture, duplicate and attribution protection, auto-assignment, activities, visits, partner visit requests confirmed by the exec | Payment gateway: receipts are entered by finance (as with bank statements today) |
+| Action queues per persona (rules over live records, permission-aware), payment reminders (one per instalment per day), WhatsApp follow-up drafts from templates | Delivery of those reminders and follow-ups: they go to the simulated outbox |
 | Holds, bookings, approvals (soleX + developer), cancellations, concurrency control | Brochure/floor-plan downloads in the partner portal (labelled) |
 | Payment schedules, receipt allocation, earning trigger, commission ledger, settlement, clawbacks | Accounting/ERP posting, GST/TDS on commission invoices |
 | Command centre, finance, partner and developer portals, CSV MIS export | Customer portal, HR/payroll, marketing spend, KYC/documents, AI features |
-| Audit trail, integrity checker, 37 integration/unit tests + 5 E2E journeys | Production hosting, backups, monitoring, MFA/SSO |
+| Click-to-call workflow: call records, transcript storage, insight extraction (rule-based), a structured next action, logging as a CALL interaction, follow-up date, missed-call SMS, one call at a time per exec, double-end protection | Telephony, recording, speech-to-text and AI summarisation: the conversation is generated from the lead and project, and analysed by phrase rules (see §12) |
+| Audit trail, integrity checker, 88 integration/unit tests + 9 E2E journeys | Production hosting, backups, monitoring, MFA/SSO |
 
 The seed **replays six months of fictional history through the real services** (with an injectable clock) rather than inserting rows directly, so the demo data obeys exactly the rules a live user would.
 
@@ -208,7 +213,23 @@ The seed **replays six months of fictional history through the real services** (
 7. **Mandate-level KPIs:** the brief asks for dashboards but not for pace against target. We think **absorption against the pace needed by the end of the mandate** should be soleX's headline metric.
 8. **Statutory items:** RERA registration of partners, GST on fee invoices and TDS on brokerage should be in discovery scope, because they shape the finance module.
 
-**Where AI would add practical value next** (not built, per the brief's scope guidance): lead prioritisation from source, budget fit and engagement signals; drafted follow-up WhatsApp messages and visit summaries for execs to approve; anomaly alerts (unusual discount patterns, sudden drops in a partner's conversion, collection slippage); and natural-language questions over the reporting layer ("which mandate is furthest behind pace?"). Each would run server-side behind the same permission scopes, with model costs and data handling stated separately.
+**Where AI would add practical value next** (not built, per the brief's scope guidance). The demo's task lists, call next-steps and WhatsApp drafts are deliberately rule- and template-based, so every suggestion can be explained. They are also the natural place to add models later, behind the same shapes: lead prioritisation from source, budget fit and engagement signals; follow-up messages and visit summaries written by a model for execs to approve; anomaly alerts (unusual discount patterns, sudden drops in a partner's conversion, collection slippage); and natural-language questions over the reporting layer ("which mandate is furthest behind pace?"). Each would run server-side behind the same permission scopes, with model costs and data handling stated separately.
+
+**Taking sales calling live.** The demo's calling feature is simulated end to end, but it is shaped like the real thing. `startCall` stands in for asking a telephony provider to bridge the exec and the customer. `endCall` stands in for the provider's call-completed webhook, followed by transcription and summarisation. The analyser returns the same shape an LLM call would. Going live means:
+
+1. Use **click-to-call through an Indian cloud-telephony provider** (Exotel, Knowlarity or Ozonetel): the provider rings the exec's phone first, then connects the customer through a soleX number. It is not practical to record calls made from personal mobiles: Android blocks call-recording APIs, and iOS has none. Ask for dual-channel recording, so exec and customer are separated without diarisation.
+2. Run **speech-to-text** that copes with Hindi, English and Hinglish, then an **LLM** with structured output, which returns the same summary, insights, sentiment and next-step shape.
+3. Add consent: a recording announcement, DPDP Act retention rules, and data-processing agreements with each vendor.
+
+Indicative monthly cost for 20 execs making about 13,000 calls (≈53,000 minutes), to be confirmed with vendors:
+
+| Item | Cost |
+| --- | --- |
+| Telephony (two legs per call) | **₹50k–1.5L**, the dominant cost |
+| Speech-to-text | ₹15k–70k |
+| Summarisation (a mid-tier model) | around ₹15k |
+
+Skipping unanswered and very short calls cuts all three. The biggest quality risk is Hinglish transcription accuracy, so vendors should be trialled on real recordings first.
 
 ## 13. Suggested phasing beyond the demo
 
@@ -222,11 +243,15 @@ The seed **replays six months of fictional history through the real services** (
 ## Appendix: verification
 
 ```
-npm test          → 3 files, 37 tests passed   (pure maths, state machines, concurrency, approvals, cancellation, access control)
-npm run test:e2e  → 5 journeys passed          (golden path across 5 personas, double booking in two browsers,
-                                                duplicate partner registration, access control, cancellation)
+npm test          → 7 files, 88 tests passed   (pure maths, state machines, concurrency, approvals, cancellation, access control,
+                                                call generation, analysis and next actions, call logging and call access,
+                                                every task-list rule, reminders, WhatsApp follow-ups, partner visit requests)
+npm run test:e2e  → 9 journeys passed          (golden path across 5 personas, double booking in two browsers,
+                                                duplicate partner registration, access control, cancellation, calling a lead,
+                                                scheduling a promised visit, partner visit request → exec confirms,
+                                                finance receipt and reminder from its queue)
 npm run typecheck · npm run lint · npm run build → clean
-Integrity checker → all 6 invariants pass on seeded data and after every journey
+Integrity checker → all 7 invariants pass on seeded data and after every journey
 ```
 
 During testing we found and fixed four defects:

@@ -24,7 +24,7 @@ export default async function BrokerCommissions() {
   const total = (statuses: string[]) => lines.filter((l) => statuses.includes(l.status)).reduce((s, l) => s + l.amount, 0);
   return (
     <>
-      <PageHeader title="Brokerage statement" subtitle="Brokerage per booking, at the rate agreed for each mandate." />
+      <PageHeader title="Brokerage statement" />
       <div className="mb-4 grid grid-cols-3 gap-3">
         {[
           ["Accruing", total(["ACCRUED"])],
@@ -40,7 +40,7 @@ export default async function BrokerCommissions() {
         ))}
       </div>
       <p className="mb-4 flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-        <Info className="mt-0.5 size-3.5 shrink-0" /> Brokerage becomes payable once the customer has paid the agreed share of the agreement value (the agreement stage). If a booking is cancelled, unpaid brokerage is reversed and paid brokerage is recovered.
+        <Info className="mt-0.5 size-3.5 shrink-0" /> Payable once your customer reaches the agreement stage. Cancelled bookings reverse unpaid brokerage.
       </p>
       {lines.length === 0 ? (
         <EmptyState title="No brokerage yet." hint="It appears here as soon as one of your customers books." />

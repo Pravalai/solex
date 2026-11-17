@@ -17,12 +17,16 @@ export type Permission =
   | "lead.reassign"
   | "lead.register"
   | "visit.manage"
+  | "visit.request"
+  | "call.place"
+  | "call.view"
   | "booking.view"
   | "booking.create"
   | "discount.approve.management"
   | "discount.approve.developer"
   | "booking.cancel"
   | "payment.record"
+  | "payment.remind"
   | "commission.view"
   | "commission.approve"
   | "commission.settle"
@@ -40,10 +44,12 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     "lead.update",
     "lead.reassign",
     "visit.manage",
+    "call.view",
     "booking.view",
     "booking.create",
     "discount.approve.management",
     "booking.cancel",
+    "payment.remind",
     "commission.view",
     "commission.approve",
     "commission.settle",
@@ -58,6 +64,8 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     "lead.create",
     "lead.update",
     "visit.manage",
+    "call.place",
+    "call.view",
     "booking.view",
     "booking.create",
   ],
@@ -65,12 +73,13 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     "project.view",
     "booking.view",
     "payment.record",
+    "payment.remind",
     "commission.view",
     "commission.settle",
     "finance.view",
     "audit.view",
   ],
-  BROKER: ["project.view", "lead.view", "lead.register", "booking.view", "commission.view"],
+  BROKER: ["project.view", "lead.view", "lead.register", "visit.request", "booking.view", "commission.view"],
   DEVELOPER: [
     "project.view",
     "booking.view",

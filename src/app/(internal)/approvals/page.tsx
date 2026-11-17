@@ -27,11 +27,7 @@ export default async function ApprovalsPage() {
   });
   return (
     <>
-      <PageHeader
-        eyebrow="Controls"
-        title="Discount approvals"
-        subtitle="Discounts above the exec's authority come here. Anything above the mandate band also needs the developer's sign-off, in their portal."
-      />
+      <PageHeader title="Discount approvals" subtitle="Above the sales exec's band. Above the mandate band, the developer decides next." />
       {pending.length === 0 ? (
         <EmptyState title="Nothing waiting for approval." />
       ) : (

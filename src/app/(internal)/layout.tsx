@@ -10,18 +10,18 @@ export const dynamic = "force-dynamic";
 
 export default async function InternalLayout({ children }: { children: React.ReactNode }) {
   const actor = await requireActor({ roles: INTERNAL_ROLES });
+  // Discount approvals are decided from the command centre's queue; its nav badge shows how many wait.
   const pendingApprovals = can(actor, "discount.approve.management")
     ? await db.booking.count({ where: { status: "PENDING_MGMT_APPROVAL" } })
     : 0;
 
   const items: NavItem[] = [
-    can(actor, "command.view") && { href: "/command-centre", label: "Command centre", icon: "gauge" },
-    { href: "/projects", label: "Projects & inventory", icon: "building" },
+    can(actor, "command.view") && { href: "/command-centre", label: "Command centre", icon: "gauge", badge: pendingApprovals },
     can(actor, "lead.view") && { href: "/leads", label: actor.role === "SALES" ? "My leads" : "Leads", icon: "users" },
+    { href: "/projects", label: "Projects & inventory", icon: "building" },
     { href: "/bookings", label: "Bookings", icon: "clipboard" },
-    can(actor, "discount.approve.management") && { href: "/approvals", label: "Approvals", icon: "check", badge: pendingApprovals },
-    can(actor, "finance.view") && { href: "/finance", label: "Collections & commission", icon: "landmark" },
-    can(actor, "audit.view") && { href: "/activity", label: "Activity & integrity", icon: "activity" },
+    can(actor, "finance.view") && { href: "/finance", label: "Finance", icon: "landmark" },
+    can(actor, "audit.view") && { href: "/activity", label: "Audit & integrity", icon: "activity" },
   ].filter(Boolean) as NavItem[];
 
   return (

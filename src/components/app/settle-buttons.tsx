@@ -31,12 +31,15 @@ export function SettleButton({
   line,
   canApprove,
   canSettle,
+  size = "xs",
 }: {
   action: (form: FormData) => Promise<ActionResult>;
   line: { id: string; kind: CommissionKind; status: CommissionStatus; isAdjustment?: boolean };
   canApprove: boolean;
   canSettle: boolean;
+  size?: "xs" | "sm";
 }) {
+  const inputClass = size === "sm" ? "h-8 w-32 text-sm" : "h-6 w-28 text-xs";
   const [open, setOpen] = useState(false);
   const base = NEXT[`${line.kind}:${line.status}`];
   if (!base) return null;
@@ -47,7 +50,7 @@ export function SettleButton({
   }
   if (next.needsRef && !open) {
     return (
-      <Button size="xs" variant="outline" onClick={() => setOpen(true)} data-testid={`settle-${line.kind}`}>
+      <Button size={size} variant={size === "sm" ? "default" : "outline"} onClick={() => setOpen(true)} data-testid={`settle-${line.kind}`}>
         {next.label}
       </Button>
     );
@@ -56,8 +59,8 @@ export function SettleButton({
     <ActionForm action={action} className="flex items-center justify-end gap-1" inlineError={false}>
       <input type="hidden" name="commissionId" value={line.id} />
       <input type="hidden" name="op" value={next.op} />
-      {next.needsRef && <Input name="reference" placeholder={next.needsRef} className="h-6 w-28 text-xs" required autoFocus />}
-      <SubmitButton size="xs" variant={next.needsRef ? "default" : "outline"} data-testid={next.needsRef ? `settle-${line.kind}-confirm` : `settle-${line.kind}`}>
+      {next.needsRef && <Input name="reference" placeholder={next.needsRef} className={inputClass} required autoFocus />}
+      <SubmitButton size={size} variant={next.needsRef || size === "sm" ? "default" : "outline"} data-testid={next.needsRef ? `settle-${line.kind}-confirm` : `settle-${line.kind}`}>
         {next.needsRef ? "Save" : next.label}
       </SubmitButton>
     </ActionForm>

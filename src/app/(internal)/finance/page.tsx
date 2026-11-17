@@ -6,28 +6,31 @@ import { formatINRCompact } from "@/lib/money";
 import { requireActor } from "@/modules/identity/session";
 import { can } from "@/modules/identity/permissions";
 import { getCollections, getCommissionLedger } from "@/modules/reporting/finance";
-import { EmptyState, KpiCard, Money, PageHeader, Section } from "@/components/app/ui-bits";
+import { getFinanceQueue } from "@/modules/reporting/queue";
+import { EmptyState, InfoTip, KpiCard, Money, PageHeader, Section, TabLinks } from "@/components/app/ui-bits";
 import { BookingStatusPill, CommissionStatusPill, Pill } from "@/components/app/status";
 import { COMMISSION_KIND_LABEL } from "@/components/app/finance-tables";
 import { SettleButton } from "@/components/app/settle-buttons";
+import { ActionQueue } from "@/components/app/action-queue";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { settleCommissionAction } from "../actions";
 
-export const metadata: Metadata = { title: "Collections & commission" };
+export const metadata: Metadata = { title: "Finance" };
 
 const KINDS: { key: string; label: string; kind?: CommissionKind }[] = [
-  { key: "ALL", label: "All lines" },
-  { key: "DEVELOPER_FEE", label: "soleX fee (receivable)", kind: "DEVELOPER_FEE" },
-  { key: "BROKER_PAYOUT", label: "Partner brokerage", kind: "BROKER_PAYOUT" },
-  { key: "EMPLOYEE_INCENTIVE", label: "Sales incentives", kind: "EMPLOYEE_INCENTIVE" },
+  { key: "ALL", label: "All" },
+  { key: "DEVELOPER_FEE", label: "soleX fee", kind: "DEVELOPER_FEE" },
+  { key: "BROKER_PAYOUT", label: "Brokerage", kind: "BROKER_PAYOUT" },
+  { key: "EMPLOYEE_INCENTIVE", label: "Incentives", kind: "EMPLOYEE_INCENTIVE" },
 ];
 const STATUSES: CommissionStatus[] = ["ACCRUED", "EARNED", "INVOICED", "APPROVED", "RECEIVED", "PAID", "REVERSED"];
+type Tab = "todo" | "collections" | "commissions";
 
 export default async function FinancePage({ searchParams }: PageProps<"/finance">) {
   const actor = await requireActor({ permission: "finance.view" });
   const sp = await searchParams;
-  const tab = sp.tab === "commissions" ? "commissions" : "collections";
+  const tab: Tab = sp.tab === "commissions" ? "commissions" : sp.tab === "collections" ? "collections" : "todo";
   const kindKey = typeof sp.kind === "string" ? sp.kind : "ALL";
   const status = typeof sp.status === "string" && STATUSES.includes(sp.status as CommissionStatus) ? (sp.status as CommissionStatus) : undefined;
   const [collections, ledger] = await Promise.all([
@@ -37,49 +40,39 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
   const s = ledger.summary;
   const link = (extra: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries({ tab, kind: kindKey, status, ...extra })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ tab, kind: kindKey === "ALL" ? undefined : kindKey, status, ...extra })) if (v) p.set(k, v);
     return `/finance?${p}`;
   };
 
   return (
     <>
-      <PageHeader
-        eyebrow="Finance"
-        title="Collections & commission"
-        subtitle="Customer collections drive commission: a line only becomes earned once the booking's collection trigger is met."
-      />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Overdue customer instalments" tone={collections.overdue > 0 ? "danger" : "default"} value={<Money value={collections.overdue} />} sub="Across live bookings" />
-        <KpiCard label="Received this month" value={<Money value={collections.receivedThisMonth} />} sub={`${collections.paymentsThisMonth} receipts · ${formatINRCompact(collections.upcoming)} due in the next 45 days`} />
+      <PageHeader title="Finance" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <KpiCard label="Overdue from customers" tone={collections.overdue > 0 ? "danger" : "default"} value={<Money value={collections.overdue} />} sub={`${formatINRCompact(collections.upcoming)} more due in 45 days`} href="/finance?tab=collections" />
+        <KpiCard label="Received this month" value={<Money value={collections.receivedThisMonth} />} sub={`${collections.paymentsThisMonth} receipts`} />
         <KpiCard
-          label="soleX fee to collect from developers"
+          label="soleX fee to collect"
           value={<Money value={s.fee.toInvoice + s.fee.invoiced} />}
-          sub={`${formatINRCompact(s.fee.toInvoice)} to invoice · ${formatINRCompact(s.fee.invoiced)} invoiced · ${formatINRCompact(s.fee.received)} received`}
-          href={link({ tab: "commissions", kind: "DEVELOPER_FEE", status: undefined })}
-        />
-        <KpiCard
-          label="Payable to partners & staff"
-          value={<Money value={s.payable.toApprove + s.payable.toPay} />}
-          sub={`${formatINRCompact(s.payable.toApprove)} awaiting approval · ${formatINRCompact(s.payable.toPay)} approved · ${formatINRCompact(s.payable.paid)} paid${s.clawbacks.count ? ` · ${formatINRCompact(s.clawbacks.open)} to recover (${s.clawbacks.count} clawbacks)` : ""}`}
-          href={link({ tab: "commissions", kind: "BROKER_PAYOUT", status: undefined })}
+          sub={`${formatINRCompact(s.fee.toInvoice)} still to invoice`}
+          href="/finance?tab=commissions&kind=DEVELOPER_FEE"
         />
       </div>
 
-      <div className="mt-5 mb-3 flex gap-1">
-        {(["collections", "commissions"] as const).map((t) => (
-          <Link
-            key={t}
-            href={`/finance?tab=${t}`}
-            className={cn("rounded-md px-3 py-1.5 text-sm", tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}
-          >
-            {t === "collections" ? "Collections" : "Commission ledger"}
-          </Link>
-        ))}
-      </div>
+      <TabLinks
+        className="mt-5 mb-4"
+        active={tab}
+        tabs={[
+          { key: "todo", label: "To do", href: "/finance" },
+          { key: "collections", label: "Collections", href: "/finance?tab=collections" },
+          { key: "commissions", label: "Commission ledger", href: "/finance?tab=commissions" },
+        ]}
+      />
 
-      {tab === "collections" ? (
+      {tab === "todo" && <TodoTab actor={actor} showAll={sp.all === "1"} />}
+
+      {tab === "collections" && (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <Section title="Instalments due" description="Overdue first, then the next 45 days. Open a booking to record a receipt.">
+          <Section title="Instalments due (overdue first, then 45 days)">
             {collections.rows.length === 0 ? (
               <EmptyState title="Nothing due." />
             ) : (
@@ -102,7 +95,7 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
                             {r.bookingCode}
                           </Link>
                           <div className="text-xs text-muted-foreground">
-                            {r.customer} · {r.unitNo} · {r.project}
+                            {r.customer} · {r.unitNo}
                           </div>
                         </TableCell>
                         <TableCell className="text-sm">{r.label}</TableCell>
@@ -110,7 +103,7 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
                         <TableCell className="text-right">
                           <Money value={r.outstanding} compact={false} />
                         </TableCell>
-                        <TableCell className="pr-4">{r.daysOverdue > 0 ? <Pill tone="danger">{r.daysOverdue} days overdue</Pill> : <Pill tone="info">Upcoming</Pill>}</TableCell>
+                        <TableCell className="pr-4">{r.daysOverdue > 0 ? <Pill tone="danger">{r.daysOverdue}d overdue</Pill> : <Pill tone="info">Upcoming</Pill>}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -118,7 +111,7 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
               </div>
             )}
           </Section>
-          <Section title="Refunds due" description="From cancellations, net of the mandate's forfeiture terms">
+          <Section title="Refunds due">
             {collections.refunds.length === 0 ? (
               <EmptyState title="No refunds pending." />
             ) : (
@@ -130,7 +123,7 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
                         {r.code}
                       </Link>
                       <div className="text-xs text-muted-foreground">
-                        {r.customer.name} · cancelled {formatDate(r.cancelledAt)} · forfeited {formatINRCompact(r.forfeitedAmount)}
+                        {r.customer.name} · forfeited {formatINRCompact(r.forfeitedAmount)}
                       </div>
                     </div>
                     <Money value={r.refundDue} className="font-medium" />
@@ -140,14 +133,20 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
             )}
           </Section>
         </div>
-      ) : (
+      )}
+
+      {tab === "commissions" && (
         <Section
-          title="Commission ledger"
-          description="One line per party per booking, with rates frozen from the mandate. Approving payouts is a management duty; finance records invoices, receipts and payments."
+          title={
+            <span className="flex items-center gap-1.5">
+              Commission ledger
+              <InfoTip>One line per party per booking, with rates frozen from the mandate. A line becomes earned once the booking&apos;s collection trigger is met. Management approves payouts; finance records invoices, receipts and payments.</InfoTip>
+            </span>
+          }
           actions={
             <div className="flex flex-wrap gap-1">
               {KINDS.map((k) => (
-                <Link key={k.key} href={link({ kind: k.key })} className={cn("rounded-md border px-2 py-1 text-xs", kindKey === k.key ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}>
+                <Link key={k.key} href={link({ kind: k.key === "ALL" ? undefined : k.key })} className={cn("rounded-md border px-2 py-1 text-xs", kindKey === k.key ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}>
                   {k.label}
                 </Link>
               ))}
@@ -180,12 +179,16 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
                         {l.booking.code}
                       </Link>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        {l.booking.unit.unitNo} · {l.project.name} <BookingStatusPill status={l.booking.status} />
+                        {l.booking.unit.unitNo} <BookingStatusPill status={l.booking.status} />
                       </div>
                     </TableCell>
                     <TableCell className="text-sm">
                       {COMMISSION_KIND_LABEL[l.kind]}
-                      {l.isAdjustment && <Pill tone="danger" className="ml-1">Clawback</Pill>}
+                      {l.isAdjustment && (
+                        <Pill tone="danger" className="ml-1">
+                          Clawback
+                        </Pill>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">{l.broker?.firmName ?? l.user?.name ?? "Developer"}</TableCell>
                     <TableCell className={cn("text-right", l.amount < 0 && "text-destructive")}>
@@ -206,4 +209,9 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
       )}
     </>
   );
+}
+
+async function TodoTab({ actor, showAll }: { actor: Awaited<ReturnType<typeof requireActor>>; showAll: boolean }) {
+  const queue = await getFinanceQueue(actor, showAll ? 100 : 10);
+  return <ActionQueue title="To do" queue={queue} showAllHref="/finance?all=1" emptyHint="No overdue collections, invoices or payouts waiting." />;
 }

@@ -12,7 +12,7 @@ export function RegisterLeadForm({ action, projects }: { action: (form: FormData
       <LeadFormFields projects={projects} withSource={false} />
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-gold" />
-        The first partner to register a customer for a project owns the attribution for the mandate&apos;s protection window. If the customer is already registered, you will be told, but not by whom.
+        First to register owns the customer for the protection window. Duplicates are refused without saying who holds them.
       </p>
       <SubmitButton className="h-10 w-full sm:w-auto" data-testid="register-lead">
         Register customer

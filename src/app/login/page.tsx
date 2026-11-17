@@ -29,7 +29,7 @@ const ROLE_STORY: Record<Role, string> = {
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
-  const { next } = await searchParams;
+  const { next, expired } = await searchParams;
   const users = await db.user.findMany({
     where: { active: true },
     orderBy: [{ role: "asc" }, { name: "asc" }],
@@ -67,6 +67,11 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <p className="mt-1 text-sm text-muted-foreground">
             Pick a demo persona to explore each stakeholder&apos;s view. All demo accounts use the password <code className="rounded bg-muted px-1">demo1234</code>.
           </p>
+          {expired && (
+            <p role="status" className="mt-3 rounded-md bg-status-hold/18 px-3 py-2 text-sm text-[oklch(0.45_0.1_65)]" data-testid="session-expired">
+              Your session ended because that account no longer exists or was deactivated (for example, the demo data was reset). Please sign in again.
+            </p>
+          )}
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {grouped.map(({ role, users }) => {

@@ -14,11 +14,7 @@ export default async function DeveloperApprovals() {
   const pending = await listDeveloperApprovals(actor);
   return (
     <>
-      <PageHeader
-        eyebrow="Pricing control"
-        title="Discount approvals"
-        subtitle="soleX can approve discounts within the band agreed in the mandate. Anything larger needs your decision here."
-      />
+      <PageHeader title="Discount approvals" subtitle="Above the band soleX may approve under your mandate." />
       {pending.length === 0 ? (
         <EmptyState title="Nothing needs your approval." />
       ) : (

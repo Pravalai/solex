@@ -2,7 +2,7 @@ import type { Lead } from "@/generated/prisma/client";
 import type { LeadSource, LeadStage } from "@/generated/prisma/enums";
 import { db, withTx, type Tx } from "@/lib/db";
 import { addDays, now } from "@/lib/clock";
-import { DomainError, NotFoundError } from "@/lib/errors";
+import { ConflictError, DomainError, NotFoundError } from "@/lib/errors";
 import { normalizePhone, isValidIndianMobile } from "@/lib/phone";
 import { assertTransition, canTransition, type Machine } from "@/lib/state";
 import type { Actor } from "@/modules/identity/actor";
@@ -234,6 +234,33 @@ export async function changeLeadStage(actor: Actor, leadId: string, to: LeadStag
 export const ACTIVITY_TYPES = ["CALL", "WHATSAPP", "EMAIL", "MEETING", "NOTE"] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
+/**
+ * Writes one touchpoint on the lead timeline inside the caller's transaction.
+ * A real contact (the customer was reached) stamps `lastContactAt` and moves a
+ * NEW lead to CONTACTED. Shared by manual logging and the calls module.
+ */
+export async function recordInteraction(
+  tx: Tx,
+  actor: Actor,
+  lead: Lead,
+  input: { type: string; note: string; contact: boolean; nextFollowUpAt?: Date | null },
+) {
+  const at = now();
+  const activity = await tx.leadActivity.create({
+    data: { leadId: lead.id, userId: actor.userId, type: input.type, note: input.note.trim(), at },
+  });
+  await tx.lead.update({
+    where: { id: lead.id },
+    data: {
+      updatedAt: at,
+      ...(input.contact ? { lastContactAt: at } : {}),
+      ...(input.nextFollowUpAt !== undefined ? { nextFollowUpAt: input.nextFollowUpAt } : {}),
+    },
+  });
+  if (input.contact && lead.stage === "NEW") await setStage(tx, actor, lead, "CONTACTED");
+  return activity;
+}
+
 export async function logActivity(
   actor: Actor,
   leadId: string,
@@ -243,26 +270,50 @@ export async function logActivity(
   if (!input.note.trim()) throw new DomainError("VALIDATION", "Add a short note about the interaction.");
   return withTx(async (tx) => {
     const lead = await getScopedLead(actor, leadId, tx);
-    const at = now();
-    const isContact = input.type !== "NOTE";
-    await tx.leadActivity.create({
-      data: { leadId: lead.id, userId: actor.userId, type: input.type, note: input.note.trim(), at },
+    await recordInteraction(tx, actor, lead, {
+      type: input.type,
+      note: input.note,
+      contact: input.type !== "NOTE",
+      nextFollowUpAt: input.nextFollowUpAt,
     });
-    await tx.lead.update({
-      where: { id: lead.id },
-      data: {
-        updatedAt: at,
-        ...(isContact ? { lastContactAt: at } : {}),
-        ...(input.nextFollowUpAt !== undefined ? { nextFollowUpAt: input.nextFollowUpAt } : {}),
-      },
-    });
-    if (isContact && lead.stage === "NEW") await setStage(tx, actor, lead, "CONTACTED");
     await recordEvent(tx, actor, {
       type: "LEAD_ACTIVITY",
       entityType: "Lead",
       entityId: lead.id,
       projectId: lead.projectId,
       summary: `${input.type.toLowerCase()} logged on ${lead.code}`,
+    });
+  });
+}
+
+/**
+ * Sends a WhatsApp message to the customer (simulated: it lands in the outbox)
+ * and logs it on the timeline as a contact, with the next follow-up two days out.
+ */
+export async function sendLeadMessage(actor: Actor, leadId: string, input: { body: string }) {
+  assertCan(actor, "lead.update");
+  const body = input.body.trim();
+  if (body.length < 10) throw new DomainError("VALIDATION", "Write the message before sending it.");
+  if (body.length > 1000) throw new DomainError("VALIDATION", "Keep the message under 1,000 characters.");
+  return withTx(async (tx) => {
+    const lead = await getScopedLead(actor, leadId, tx);
+    if (CLOSED_STAGES.includes(lead.stage)) throw new DomainError("VALIDATION", "This lead is closed.");
+    const nextFollowUpAt = addDays(now(), 2);
+    nextFollowUpAt.setHours(11, 0, 0, 0);
+    await notify(tx, {
+      channel: "WHATSAPP",
+      recipient: `${lead.name} (customer)`,
+      body,
+      entityType: "Lead",
+      entityId: lead.id,
+    });
+    await recordInteraction(tx, actor, lead, { type: "WHATSAPP", note: `Sent: ${body}`, contact: true, nextFollowUpAt });
+    await recordEvent(tx, actor, {
+      type: "LEAD_MESSAGE_SENT",
+      entityType: "Lead",
+      entityId: lead.id,
+      projectId: lead.projectId,
+      summary: `WhatsApp follow-up sent to ${lead.code} (simulated)`,
     });
   });
 }
@@ -306,9 +357,10 @@ export async function scheduleVisit(actor: Actor, leadId: string, input: { sched
     const lead = await getScopedLead(actor, leadId, tx);
     if (CLOSED_STAGES.includes(lead.stage)) throw new DomainError("VALIDATION", "This lead is closed.");
     const at = now();
-    if (input.scheduledAt.getTime() < at.getTime() - 60 * 60_000) {
-      throw new DomainError("VALIDATION", "A site visit cannot be scheduled in the past.");
-    }
+    assertNotPast(input.scheduledAt, at);
+    // A pending partner request for this lead is confirmed rather than duplicated.
+    const requested = await tx.siteVisit.findFirst({ where: { leadId: lead.id, status: "REQUESTED" } });
+    if (requested) return confirmRequested(tx, actor, lead, requested.id, input.scheduledAt, input.note);
     const visit = await tx.siteVisit.create({
       data: {
         leadId: lead.id,
@@ -319,32 +371,130 @@ export async function scheduleVisit(actor: Actor, leadId: string, input: { sched
         createdAt: at,
       },
     });
-    await tx.lead.update({ where: { id: lead.id }, data: { nextFollowUpAt: input.scheduledAt, updatedAt: at } });
+    await afterVisitScheduled(tx, actor, lead, visit.id, input.scheduledAt, input.note);
+    return visit;
+  });
+}
+
+function assertNotPast(scheduledAt: Date, at: Date) {
+  if (Number.isNaN(scheduledAt.getTime())) throw new DomainError("VALIDATION", "Pick a date and time.");
+  if (scheduledAt.getTime() < at.getTime() - 60 * 60_000) {
+    throw new DomainError("VALIDATION", "A site visit cannot be scheduled in the past.");
+  }
+}
+
+type LeadWithProject = Lead & { project: { name: string } };
+
+/** Timeline, stage, audit and customer confirmation for a visit that is now SCHEDULED. */
+async function afterVisitScheduled(tx: Tx, actor: Actor, lead: LeadWithProject, visitId: string, scheduledAt: Date, note?: string) {
+  const at = now();
+  await tx.lead.update({ where: { id: lead.id }, data: { nextFollowUpAt: scheduledAt, updatedAt: at } });
+  await tx.leadActivity.create({
+    data: { leadId: lead.id, userId: actor.userId, type: "VISIT_SCHEDULED", note: note?.trim() || "Site visit scheduled", at },
+  });
+  await moveLeadStage(tx, actor, lead.id, "VISIT_PLANNED", { onlyIfAllowed: true });
+  await recordEvent(tx, actor, {
+    type: "VISIT_SCHEDULED",
+    entityType: "SiteVisit",
+    entityId: visitId,
+    projectId: lead.projectId,
+    summary: `Site visit for ${lead.code} on ${scheduledAt.toDateString()}`,
+  });
+  await notify(tx, {
+    channel: "WHATSAPP",
+    recipient: `${lead.name} (customer)`,
+    body: `Your visit to ${lead.project.name} is confirmed for ${scheduledAt.toLocaleString("en-IN")}. Reply to reschedule.`,
+    entityType: "SiteVisit",
+    entityId: visitId,
+  });
+}
+
+async function confirmRequested(tx: Tx, actor: Actor, lead: LeadWithProject, visitId: string, scheduledAt: Date, note?: string) {
+  // Status-guarded: two execs (or two tabs) cannot both confirm the same request.
+  const res = await tx.siteVisit.updateMany({ where: { id: visitId, status: "REQUESTED" }, data: { status: "SCHEDULED", scheduledAt } });
+  if (res.count !== 1) throw new ConflictError("This visit request was already handled.");
+  await afterVisitScheduled(tx, actor, lead, visitId, scheduledAt, note || "Partner's visit request confirmed");
+  if (lead.brokerId) {
+    const broker = await tx.broker.findUnique({ where: { id: lead.brokerId }, select: { firmName: true } });
+    await notify(tx, {
+      channel: "WHATSAPP",
+      recipient: `${broker?.firmName ?? "Partner"} (channel partner)`,
+      body: `Site visit for ${lead.name} at ${lead.project.name} confirmed for ${scheduledAt.toLocaleString("en-IN")}.`,
+      entityType: "SiteVisit",
+      entityId: visitId,
+    });
+  }
+  return tx.siteVisit.findUniqueOrThrow({ where: { id: visitId } });
+}
+
+/**
+ * A channel partner asks for a site visit for one of their own customers, with a
+ * preferred slot. The assigned exec confirms it (or picks another time), which
+ * schedules it like any other visit.
+ */
+export async function requestVisit(actor: Actor, leadId: string, input: { preferredAt: Date; note?: string }) {
+  assertCan(actor, "visit.request");
+  return withTx(async (tx) => {
+    const lead = await getScopedLead(actor, leadId, tx);
+    if (CLOSED_STAGES.includes(lead.stage)) throw new DomainError("VALIDATION", "This customer's enquiry is closed.");
+    const at = now();
+    assertNotPast(input.preferredAt, at);
+    const pending = await tx.siteVisit.findFirst({
+      where: { leadId: lead.id, OR: [{ status: "REQUESTED" }, { status: "SCHEDULED", scheduledAt: { gte: at } }] },
+    });
+    if (pending) {
+      throw new DomainError("VALIDATION", pending.status === "REQUESTED" ? "A visit request is already waiting for confirmation." : "A site visit is already scheduled for this customer.");
+    }
+    const visit = await tx.siteVisit.create({
+      data: {
+        leadId: lead.id,
+        projectId: lead.projectId,
+        scheduledAt: input.preferredAt,
+        status: "REQUESTED",
+        assignedToId: lead.assignedToId ?? actor.userId,
+        brokerId: lead.brokerId,
+        createdAt: at,
+      },
+    });
+    const owner = lead.assignedToId ? await tx.user.findUnique({ where: { id: lead.assignedToId }, select: { name: true } }) : null;
     await tx.leadActivity.create({
       data: {
         leadId: lead.id,
         userId: actor.userId,
-        type: "VISIT_SCHEDULED",
-        note: input.note?.trim() || "Site visit scheduled",
+        type: "VISIT_REQUESTED",
+        note: `Partner requested a site visit for ${input.preferredAt.toLocaleString("en-IN")}${input.note?.trim() ? `: ${input.note.trim()}` : ""}`,
         at,
       },
     });
-    await moveLeadStage(tx, actor, lead.id, "VISIT_PLANNED", { onlyIfAllowed: true });
     await recordEvent(tx, actor, {
-      type: "VISIT_SCHEDULED",
+      type: "VISIT_REQUESTED",
       entityType: "SiteVisit",
       entityId: visit.id,
       projectId: lead.projectId,
-      summary: `Site visit for ${lead.code} on ${input.scheduledAt.toDateString()}`,
+      summary: `Partner requested a site visit for ${lead.code} on ${input.preferredAt.toDateString()}`,
     });
-    await notify(tx, {
-      channel: "WHATSAPP",
-      recipient: `${lead.name} (customer)`,
-      body: `Your visit to ${lead.project.name} is confirmed for ${input.scheduledAt.toLocaleString("en-IN")}. Reply to reschedule.`,
-      entityType: "SiteVisit",
-      entityId: visit.id,
-    });
+    if (owner) {
+      await notify(tx, {
+        channel: "WHATSAPP",
+        recipient: owner.name,
+        body: `Visit request for ${lead.code} (${lead.name}), ${lead.project.name}: preferred ${input.preferredAt.toLocaleString("en-IN")}. Confirm it from your task list.`,
+        entityType: "SiteVisit",
+        entityId: visit.id,
+      });
+    }
     return visit;
+  });
+}
+
+/** The sales exec confirms a partner's visit request, at the requested time or another slot. */
+export async function confirmVisit(actor: Actor, visitId: string, input: { scheduledAt: Date }) {
+  assertCan(actor, "visit.manage");
+  return withTx(async (tx) => {
+    const visit = await getScopedVisit(actor, visitId, tx);
+    if (visit.status !== "REQUESTED") throw new DomainError("VALIDATION", "This visit is not waiting for confirmation.");
+    assertNotPast(input.scheduledAt, now());
+    const lead = await getScopedLead(actor, visit.leadId, tx);
+    return confirmRequested(tx, actor, lead, visit.id, input.scheduledAt);
   });
 }
 

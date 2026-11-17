@@ -176,12 +176,12 @@ export default async function BookingPage({ params }: PageProps<"/bookings/[book
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-5">
-          <Section title="Payment schedule" description={b.installments.length ? "Generated from the project payment plan at confirmation; sums exactly to the agreement value." : "Created when the booking is confirmed."}>
+          <Section title="Payment schedule">
             {b.installments.length > 0 ? <ScheduleTable installments={b.installments} /> : <p className="text-sm text-muted-foreground">No schedule yet. The booking is awaiting approval.</p>}
           </Section>
 
           {b.commissions.length > 0 && (
-            <Section title="Commission ledger" description="Rates frozen from the mandate at accrual. Lines become earned when the collection trigger is met.">
+            <Section title="Commission">
               <CommissionTable
                 lines={b.commissions}
                 renderActions={(l) => (
@@ -191,8 +191,9 @@ export default async function BookingPage({ params }: PageProps<"/bookings/[book
             </Section>
           )}
 
-          <Section title="Audit trail" description="Every state change on this booking, written in the same transaction as the change itself.">
-            <ol className="space-y-2 text-sm">
+          <details className="rounded-xl border bg-card px-4 py-3 shadow-xs">
+            <summary className="cursor-pointer text-sm font-semibold">Audit trail · {b.timeline.length} events</summary>
+            <ol className="mt-3 space-y-2 text-sm">
               {b.timeline.map((e) => (
                 <li key={e.id} className="grid grid-cols-[130px_1fr] gap-3">
                   <span className="text-xs text-muted-foreground">{formatDateTime(e.at)}</span>
@@ -203,12 +204,12 @@ export default async function BookingPage({ params }: PageProps<"/bookings/[book
                 </li>
               ))}
             </ol>
-          </Section>
+          </details>
         </div>
 
         <div className="space-y-5">
           {live && can(actor, "payment.record") && b.totals.outstanding > 0 && (
-            <Section title="Record a payment" description="Allocated to instalments in due order. Bank references must be unique.">
+            <Section title="Record a payment">
               <ActionForm action={recordPaymentAction} resetOnSuccess className="grid gap-3">
                 <input type="hidden" name="bookingId" value={b.id} />
                 <div className="grid gap-1.5">
@@ -243,7 +244,7 @@ export default async function BookingPage({ params }: PageProps<"/bookings/[book
             </Section>
           )}
 
-          <Section title="Price snapshot" description="Frozen at booking; later price revisions do not change it.">
+          <Section title="Price (frozen at booking)">
             <DefinitionList
               className="text-xs"
               items={[

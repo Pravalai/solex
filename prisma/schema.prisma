@@ -61,6 +61,8 @@ enum LeadStage {
 }
 
 enum VisitStatus {
+  // Asked for by the channel partner; becomes SCHEDULED when the sales exec confirms a slot.
+  REQUESTED
   SCHEDULED
   COMPLETED
   NO_SHOW
@@ -402,6 +404,8 @@ model Call {
   interestScore Int?
   execTalkPct   Int?
   nextStep      String?
+  /// Structured next step ("SCHEDULE_VISIT", "SEND_INFO:PAYMENT_PLAN", ...) offered as a one-click action.
+  nextAction    String?
   /// The CALL interaction this call was logged as (set when the call ends).
   activityId    String?          @unique
   activity      LeadActivity?    @relation(fields: [activityId], references: [id])

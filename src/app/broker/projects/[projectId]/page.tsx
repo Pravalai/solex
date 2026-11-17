@@ -1,14 +1,13 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { NotFoundError } from "@/lib/errors";
 import { formatBps, formatINR } from "@/lib/money";
 import { formatDate } from "@/lib/format";
 import { requireActor } from "@/modules/identity/session";
 import { getStackingPlan } from "@/modules/reporting/inventory";
-import { Money, PageHeader, Section } from "@/components/app/ui-bits";
-import { SimulatedBadge } from "@/components/app/brand";
+import { InfoTip, Money, PageHeader, Section } from "@/components/app/ui-bits";
 import { StackingPlan, StatusLegend } from "@/components/app/stacking-plan";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -33,23 +32,27 @@ export default async function BrokerProject({ params }: PageProps<"/broker/proje
         title={plan.project.name}
         subtitle={`${plan.project.locality} · possession ${formatDate(plan.project.possessionDate)} · ${available.length} units available`}
       />
-      <div className="mb-5 flex flex-wrap gap-2">
-        {["Brochure", "Floor plans", "Price sheet"].map((d) => (
-          <span key={d} className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm">
-            <FileText className="size-4 text-gold" /> {d}
+      <Section
+        title={
+          <span className="flex items-center gap-1.5">
+            Live availability <InfoTip>Units shown as unavailable are held, booked or reserved. soleX does not share who holds them.</InfoTip>
           </span>
-        ))}
-        <SimulatedBadge label="Downloads simulated" className="self-center" />
-      </div>
-
-      <Section title="Available inventory" description="Live. Units shown as unavailable are held, booked or reserved; soleX does not share who holds them.">
+        }
+      >
         <div className="mb-3">
           <StatusLegend brokerView />
         </div>
         <StackingPlan towers={plan.towers} brokerView />
       </Section>
 
-      <Section title="Current price list" description="Indicative list price including charges. Final pricing is confirmed by your soleX relationship manager." className="mt-5">
+      <Section
+        title={
+          <span className="flex items-center gap-1.5">
+            Price list <InfoTip>Indicative list price including charges. Your soleX relationship manager confirms final pricing.</InfoTip>
+          </span>
+        }
+        className="mt-5"
+      >
         <div className="-mx-4 overflow-x-auto">
           <Table>
             <TableHeader>

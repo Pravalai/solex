@@ -28,6 +28,8 @@ import { approveBooking, cancelBooking, createBooking, rejectBooking } from "../
 import { recordPayment, type PaymentMode } from "../src/modules/finance/payments";
 import { settleCommission } from "../src/modules/finance/commissions";
 import { runIntegrityChecks } from "../src/modules/reporting/integrity";
+import { endCall, startCall } from "../src/modules/calls/calls";
+import { willAnswer } from "../src/modules/calls/script";
 import type { LeadSource } from "../src/generated/prisma/enums";
 
 // ---------------------------------------------------------------- utilities
@@ -177,6 +179,8 @@ async function reset() {
   await db.installment.deleteMany();
   await db.booking.deleteMany();
   await db.siteVisit.deleteMany();
+  await db.callInsight.deleteMany();
+  await db.call.deleteMany();
   await db.leadActivity.deleteMany();
   await db.lead.deleteMany();
   await db.customer.deleteMany();
@@ -657,6 +661,32 @@ async function main() {
       scheduledAt: atHour(addDays(REAL_NOW, 1 + (i % 3)), 11 + i),
       note: "Weekend visit with family",
     });
+  }
+
+  // Simulated calls (transcript, summary, insights) on three open leads per sales exec,
+  // placed over the last day. Two leads also get a later attempt that rings out unanswered.
+  let callIndex = 0;
+  let missed = 0;
+  for (const exec of [people.arjun, people.sara, people.rohit]) {
+    const leads = await db.lead.findMany({
+      where: { assignedToId: exec.userId, stage: { in: ["CONTACTED", "QUALIFIED", "FOLLOW_UP", "NEGOTIATION"] }, id: { not: dupDemo.id } },
+      orderBy: { code: "asc" },
+      take: 3,
+    });
+    for (const lead of leads) {
+      const at = addMinutes(REAL_NOW, -22 * 60 + callIndex++ * 120);
+      setClock(at);
+      const call = await startCall(exec, lead.id);
+      setClock(addMinutes(at, 3));
+      await endCall(exec, call.id, { talkSec: call.durationSec });
+      if (missed < 2 && !willAnswer(lead.code, 2)) {
+        setClock(addMinutes(at, 60));
+        const retry = await startCall(exec, lead.id);
+        setClock(addMinutes(at, 61));
+        await endCall(exec, retry.id, { talkSec: null });
+        missed++;
+      }
+    }
   }
 
   setClock(null);

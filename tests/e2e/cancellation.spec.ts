@@ -29,5 +29,5 @@ test("cancelling a booking releases the unit and reverses or claws back commissi
   await expect(page.getByTestId("unit-drawer-title")).toContainText("Available");
 
   await page.goto("/activity");
-  await expect(page.getByTestId("integrity-status")).toContainText("All 6 integrity checks pass");
+  await expect(page.getByTestId("integrity-status")).toContainText("All 7 integrity checks pass");
 });

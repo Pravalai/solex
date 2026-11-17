@@ -5,11 +5,11 @@ import { formatDateTime, humanize } from "@/lib/format";
 import { requireActor } from "@/modules/identity/session";
 import { getActivity } from "@/modules/reporting/finance";
 import { runIntegrityChecks } from "@/modules/reporting/integrity";
-import { PageHeader, Section } from "@/components/app/ui-bits";
+import { InfoTip, PageHeader, Section } from "@/components/app/ui-bits";
 import { SimulatedBadge } from "@/components/app/brand";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Activity & integrity" };
+export const metadata: Metadata = { title: "Audit & integrity" };
 
 const CHANNEL_ICON = { WHATSAPP: MessageCircle, EMAIL: Mail, SMS: Smartphone, IN_APP: BellRing } as const;
 
@@ -22,23 +22,17 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
 
   return (
     <>
-      <PageHeader
-        eyebrow="Governance"
-        title="Activity & integrity"
-        subtitle="The audit trail is written in the same transaction as each change. The integrity checks re-verify the whole database every time this page loads."
-      />
+      <PageHeader title="Audit & integrity" />
 
-      <Section
-        title={
+      <details open={!allOk} className={cn("mb-5 rounded-xl border bg-card px-4 py-3 shadow-xs", !allOk && "border-destructive/40")}>
+        <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
           <span className="flex items-center gap-2" data-testid="integrity-status">
             {allOk ? <CheckCircle2 className="size-4 text-status-available" /> : <XCircle className="size-4 text-destructive" />}
             {allOk ? `All ${checks.length} integrity checks pass` : "Integrity violations found"}
           </span>
-        }
-        description="Live invariants across inventory, bookings, collections and the commission ledger"
-        className="mb-5"
-      >
-        <ul className="grid gap-2 md:grid-cols-2">
+          <InfoTip>Re-verified across the whole database every time this page loads: inventory, bookings, collections and the commission ledger.</InfoTip>
+        </summary>
+        <ul className="mt-3 grid gap-2 md:grid-cols-2">
           {checks.map((c) => (
             <li key={c.key} className={cn("flex items-start gap-2 rounded-lg border p-3 text-sm", !c.ok && "border-destructive/40 bg-destructive/5")}>
               {c.ok ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-status-available" /> : <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />}
@@ -53,12 +47,15 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
             </li>
           ))}
         </ul>
-      </Section>
+      </details>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
         <Section
-          title="Audit trail"
-          description="Latest 120 events"
+          title={
+            <span className="flex items-center gap-1.5">
+              Audit trail <InfoTip>Written in the same transaction as each change, so it can never disagree with the data. Latest 120 events.</InfoTip>
+            </span>
+          }
           actions={
             <form action="/activity" className="flex items-center gap-2">
               <select name="type" defaultValue={type ?? ""} className="h-8 rounded-lg border bg-card px-2 text-xs" aria-label="Filter by event type">
@@ -108,7 +105,6 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
               Notification outbox <SimulatedBadge />
             </span>
           }
-          description="What would be sent by WhatsApp Business API, email or SMS. Nothing leaves this demo."
           className="h-fit"
         >
           <ul className="space-y-3">

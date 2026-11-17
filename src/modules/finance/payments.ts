@@ -1,7 +1,8 @@
 import type { Payment } from "@/generated/prisma/client";
 import { withTx } from "@/lib/db";
-import { now } from "@/lib/clock";
+import { now, startOfDay } from "@/lib/clock";
 import { ConflictError, DomainError, NotFoundError, isUniqueViolation } from "@/lib/errors";
+import { formatDate } from "@/lib/format";
 import { formatINR } from "@/lib/money";
 import type { Actor } from "@/modules/identity/actor";
 import { assertCan } from "@/modules/identity/permissions";
@@ -11,8 +12,50 @@ import { transitionUnit } from "@/modules/inventory/units";
 import { earningThreshold } from "./calc";
 import { markCommissionsEarned } from "./commissions";
 
-export const PAYMENT_MODES = ["NEFT", "RTGS", "UPI", "CHEQUE", "HOME_LOAN_DISBURSAL"] as const;
-export type PaymentMode = (typeof PAYMENT_MODES)[number];
+import type { PaymentMode } from "./modes";
+export { PAYMENT_MODES, type PaymentMode } from "./modes";
+
+/**
+ * Sends the customer a payment reminder for an open instalment (simulated
+ * WhatsApp through the outbox). At most one reminder per instalment per day,
+ * so a busy queue cannot spam a customer.
+ */
+export async function sendPaymentReminder(actor: Actor, installmentId: string): Promise<void> {
+  assertCan(actor, "payment.remind");
+  await withTx(async (tx) => {
+    const inst = await tx.installment.findFirst({
+      where: { id: installmentId, booking: bookingScope(actor) },
+      include: { booking: { include: { customer: true, project: true, unit: true } } },
+    });
+    if (!inst) throw new NotFoundError("Instalment");
+    if (inst.status !== "DUE" && inst.status !== "PARTIAL") throw new DomainError("VALIDATION", "This instalment is already settled.");
+    if (inst.booking.status !== "CONFIRMED" && inst.booking.status !== "AGREEMENT") {
+      throw new DomainError("VALIDATION", "Reminders can only be sent on a live booking.");
+    }
+    const at = now();
+    const already = await tx.auditEvent.count({
+      where: { type: "PAYMENT_REMINDER_SENT", entityType: "Installment", entityId: inst.id, at: { gte: startOfDay(at) } },
+    });
+    if (already > 0) throw new DomainError("ALREADY_REMINDED", "A reminder for this instalment was already sent today.");
+    const outstanding = inst.amountDue - inst.amountReceived;
+    const overdue = inst.dueDate < at;
+    await notify(tx, {
+      channel: "WHATSAPP",
+      recipient: `${inst.booking.customer.name} (customer)`,
+      body: `Dear ${inst.booking.customer.name}, a gentle reminder that ${formatINR(outstanding)} towards "${inst.label}" for ${inst.booking.unit.unitNo}, ${inst.booking.project.name} ${overdue ? `was due on ${formatDate(inst.dueDate)}` : `is due on ${formatDate(inst.dueDate)}`}. Please quote ${inst.booking.code} with your payment. Thank you.`,
+      entityType: "Booking",
+      entityId: inst.booking.id,
+    });
+    await recordEvent(tx, actor, {
+      type: "PAYMENT_REMINDER_SENT",
+      entityType: "Installment",
+      entityId: inst.id,
+      projectId: inst.booking.projectId,
+      summary: `Payment reminder sent for ${inst.booking.code} "${inst.label}" (${formatINR(outstanding)}${overdue ? ", overdue" : ""})`,
+      data: { bookingId: inst.booking.id, outstanding },
+    });
+  });
+}
 
 export type RecordPaymentInput = {
   bookingId: string;

@@ -28,12 +28,13 @@ test("lead → visit → booking → approvals → collections → commission �
 
   // 1. Partner registers the customer from the broker portal.
   const rohan = await newSession(browser, "rohan@primeestates.demo");
-  await rohan.page.goto("/broker/leads");
+  await rohan.page.goto("/broker");
   await rohan.page.locator("#projectId").selectOption({ label: "Aravali Greens" });
   await rohan.page.locator("#name").fill(CUSTOMER);
   await rohan.page.locator("#phone").fill(PHONE);
   await rohan.page.getByTestId("register-lead").click();
-  await expect(toast(rohan.page).filter({ hasText: `Registered ${CUSTOMER}` })).toBeVisible();
+  await expect(toast(rohan.page).filter({ hasText: `${CUSTOMER} registered` })).toBeVisible();
+  await rohan.page.goto("/broker/leads");
   await expect(rohan.page.getByTestId("broker-leads")).toContainText(CUSTOMER);
 
   // 2. The lead was auto-assigned to a sales exec allocated to the project.
@@ -44,17 +45,19 @@ test("lead → visit → booking → approvals → collections → commission �
   const ownerRow = neha.page.locator("dt", { hasText: "Owner" }).locator("xpath=following-sibling::dd[1]");
   const owner = (await ownerRow.textContent())!.trim();
   expect(Object.keys(EXEC_EMAIL)).toContain(owner);
-  await expect(neha.page.getByText("Prime Estates", { exact: true })).toBeVisible();
+  await expect(neha.page.getByRole("heading", { level: 1 }).locator("..")).toContainText("Partner: Prime Estates");
 
   // 3. The exec calls, schedules a visit and records its outcome.
   const exec = await newSession(browser, EXEC_EMAIL[owner]);
   const p = exec.page;
   await p.goto(leadUrl);
+  await p.locator('select[name="type"]').selectOption("CALL");
   await p.getByTestId("activity-note").fill("Spoke to Kavya; wants a park-facing 3BHK, visiting with family");
   await p.getByTestId("log-activity").click();
   await expect(toast(p).filter({ hasText: "Activity logged." })).toBeVisible();
   await p.getByTestId("schedule-visit").click();
   await expect(toast(p).filter({ hasText: "Site visit scheduled" })).toBeVisible();
+  await p.getByText("Record outcome").click();
   await p.getByTestId("visit-feedback").fill("Loved the clubhouse; prefers tower A upper floors");
   await p.getByTestId("complete-visit").click();
   await expect(toast(p).filter({ hasText: "Visit marked completed." })).toBeVisible();
@@ -131,7 +134,7 @@ test("lead → visit → booking → approvals → collections → commission �
 
   // 7. Command centre reflects the sale.
   expect(await absorbedKpi(neha.page)).toBe(absorbedBefore + 1);
-  await expect(neha.page.getByTestId("alerts")).not.toContainText(code);
+  await expect(neha.page.getByTestId("action-queue")).not.toContainText(code);
 
   // 8. The partner sees the booking and their earned brokerage, but nothing internal.
   await rohan.page.goto("/broker/commissions");
@@ -150,7 +153,7 @@ test("lead → visit → booking → approvals → collections → commission �
 
   // 10. Integrity checks still hold across the whole database.
   await neha.page.goto("/activity");
-  await expect(neha.page.getByTestId("integrity-status")).toContainText("All 6 integrity checks pass");
+  await expect(neha.page.getByTestId("integrity-status")).toContainText("All 7 integrity checks pass");
 
   for (const s of [neha, rohan, exec, meera, vikram]) await s.context.close();
 });

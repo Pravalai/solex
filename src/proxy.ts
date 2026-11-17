@@ -12,6 +12,13 @@ export async function proxy(request: NextRequest) {
   const claims = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (pathname === "/login") {
+    // The app found the session's user gone or inactive: drop the cookie rather than
+    // redirecting home, which would loop between /login and the home page.
+    if (request.nextUrl.searchParams.has("expired")) {
+      const res = NextResponse.next();
+      res.cookies.delete(SESSION_COOKIE);
+      return res;
+    }
     if (claims) return NextResponse.redirect(new URL(homePathFor(claims.role), request.url));
     return NextResponse.next();
   }

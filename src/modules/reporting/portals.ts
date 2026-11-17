@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { daysBetween, now, startOfDay } from "@/lib/clock";
+import { addDays, daysBetween, now, startOfDay } from "@/lib/clock";
+import { formatINRCompact } from "@/lib/money";
 import { NotFoundError } from "@/lib/errors";
 import type { Actor } from "@/modules/identity/actor";
 import { assertCan } from "@/modules/identity/permissions";
@@ -33,24 +34,101 @@ export async function listBrokerLeads(actor: Actor) {
       attributionExpiresAt: true,
       project: { select: { name: true } },
       assignedTo: { select: { name: true } },
-      visits: { orderBy: { scheduledAt: "desc" }, take: 1, select: { scheduledAt: true, status: true } },
+      visits: { orderBy: { scheduledAt: "desc" }, select: { scheduledAt: true, status: true } },
       bookings: { where: { brokerId: actor.brokerId }, select: { code: true, status: true, unit: { select: { unitNo: true } } } },
     },
   });
-  return leads.map((l) => ({
-    id: l.id,
-    code: l.code,
-    name: l.name,
-    phone: l.phone,
-    stage: l.stage,
-    createdAt: l.createdAt,
-    project: l.project.name,
-    // Partners see who their soleX relationship manager is, not internal notes or activity.
-    relationshipManager: l.assignedTo?.name ?? null,
-    lastVisit: l.visits[0] ?? null,
-    booking: l.bookings[0] ? { code: l.bookings[0].code, status: l.bookings[0].status, unitNo: l.bookings[0].unit.unitNo } : null,
-    protectedDaysLeft: l.attributionExpiresAt && !CLOSED_STAGES.includes(l.stage) ? Math.max(0, daysBetween(at, l.attributionExpiresAt)) : null,
-  }));
+  return leads.map((l) => {
+    const closed = CLOSED_STAGES.includes(l.stage);
+    const pendingVisit = l.visits.find((v) => v.status === "REQUESTED" || (v.status === "SCHEDULED" && v.scheduledAt >= at)) ?? null;
+    return {
+      id: l.id,
+      code: l.code,
+      name: l.name,
+      phone: l.phone,
+      stage: l.stage,
+      createdAt: l.createdAt,
+      project: l.project.name,
+      // Partners see who their soleX relationship manager is, not internal notes or activity.
+      relationshipManager: l.assignedTo?.name ?? null,
+      lastVisit: pendingVisit ?? l.visits[0] ?? null,
+      canRequestVisit: !closed && !pendingVisit,
+      booking: l.bookings[0] ? { code: l.bookings[0].code, status: l.bookings[0].status, unitNo: l.bookings[0].unit.unitNo } : null,
+      protectedDaysLeft: l.attributionExpiresAt && !closed ? Math.max(0, daysBetween(at, l.attributionExpiresAt)) : null,
+    };
+  });
+}
+
+const PARTNER_STAGE_TEXT: Partial<Record<string, string>> = {
+  CONTACTED: "Contacted by soleX",
+  QUALIFIED: "Qualified by soleX",
+  NEGOTIATION: "In price negotiation",
+  BOOKED: "Booked a unit",
+  LOST: "Not proceeding",
+};
+
+const PARTNER_ACTIVITY_TEXT: Partial<Record<string, string>> = {
+  VISIT_SCHEDULED: "Site visit scheduled",
+  VISIT_COMPLETED: "Visited the site",
+  VISIT_NO_SHOW: "Missed the site visit",
+};
+
+/**
+ * What a partner needs from their home screen: what happened to their
+ * customers lately (milestones only: never internal notes, call content or
+ * lost reasons), and which customers are about to lose protection without a
+ * site visit, so the partner can ask for one.
+ */
+export async function getBrokerUpdates(actor: Actor, opts: { days?: number; limit?: number } = {}) {
+  requireBroker(actor);
+  const at = now();
+  const since = addDays(at, -(opts.days ?? 14));
+  const [activities, lines, expiring] = await Promise.all([
+    db.leadActivity.findMany({
+      where: { at: { gte: since }, type: { in: ["STAGE_CHANGE", ...Object.keys(PARTNER_ACTIVITY_TEXT)] }, lead: leadScope(actor) },
+      orderBy: { at: "desc" },
+      take: 60,
+      select: { id: true, type: true, note: true, at: true, lead: { select: { name: true, project: { select: { name: true } } } } },
+    }),
+    db.commission.findMany({
+      where: { AND: [commissionScope(actor), { OR: [{ earnedAt: { gte: since } }, { approvedAt: { gte: since } }, { settledAt: { gte: since } }] }] },
+      select: { id: true, amount: true, isAdjustment: true, status: true, earnedAt: true, approvedAt: true, settledAt: true, booking: { select: { customer: { select: { name: true } } } } },
+    }),
+    db.lead.findMany({
+      where: {
+        AND: [
+          leadScope(actor),
+          { stage: { notIn: CLOSED_STAGES }, attributionExpiresAt: { gt: at, lt: addDays(at, 7) } },
+          { visits: { none: { OR: [{ status: { in: ["COMPLETED", "REQUESTED"] } }, { status: "SCHEDULED", scheduledAt: { gte: at } }] } } },
+        ],
+      },
+      orderBy: { attributionExpiresAt: "asc" },
+      select: { id: true, name: true, attributionExpiresAt: true, project: { select: { name: true } } },
+    }),
+  ]);
+
+  type Update = { id: string; at: Date; who: string; text: string; tone: "good" | "info" | "bad" };
+  const updates: Update[] = [];
+  for (const a of activities) {
+    const text = a.type === "STAGE_CHANGE" ? PARTNER_STAGE_TEXT[a.note.split(" → ")[1] ?? ""] : PARTNER_ACTIVITY_TEXT[a.type];
+    if (!text) continue;
+    const tone = a.type === "VISIT_NO_SHOW" || text === "Not proceeding" ? "bad" : text === "Booked a unit" || a.type === "VISIT_COMPLETED" ? "good" : "info";
+    updates.push({ id: a.id, at: a.at, who: `${a.lead.name} · ${a.lead.project.name}`, text, tone });
+  }
+  for (const c of lines) {
+    if (c.isAdjustment) continue;
+    const amount = formatINRCompact(c.amount);
+    const who = c.booking.customer.name;
+    if (c.settledAt && c.settledAt >= since) updates.push({ id: `${c.id}-paid`, at: c.settledAt, who, text: `Brokerage ${amount} paid`, tone: "good" });
+    else if (c.approvedAt && c.approvedAt >= since) updates.push({ id: `${c.id}-appr`, at: c.approvedAt, who, text: `Brokerage ${amount} approved for payment`, tone: "good" });
+    else if (c.earnedAt && c.earnedAt >= since) updates.push({ id: `${c.id}-earn`, at: c.earnedAt, who, text: `Brokerage ${amount} earned`, tone: "good" });
+  }
+  updates.sort((a, b) => +b.at - +a.at);
+
+  return {
+    updates: updates.slice(0, opts.limit ?? 8),
+    needsVisit: expiring.map((l) => ({ id: l.id, name: l.name, project: l.project.name, daysLeft: Math.max(0, daysBetween(at, l.attributionExpiresAt!)) })),
+  };
 }
 
 export async function getBrokerHome(actor: Actor) {

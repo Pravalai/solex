@@ -121,5 +121,28 @@ export async function runIntegrityChecks(client: Tx = db): Promise<IntegrityChec
     add("commission-math", "Commission lines equal base × snapshotted rate, and follow booking state", v);
   }
 
+  // 7. Every finished call is on its own lead's timeline exactly once; unfinished calls are not.
+  {
+    const calls = await client.call.findMany({
+      select: {
+        status: true,
+        attempt: true,
+        leadId: true,
+        lead: { select: { code: true } },
+        activity: { select: { leadId: true, type: true } },
+        _count: { select: { insights: true } },
+      },
+    });
+    const v: string[] = [];
+    for (const c of calls) {
+      const label = `${c.lead.code} call #${c.attempt}`;
+      const finished = c.status === "COMPLETED" || c.status === "NO_ANSWER";
+      if (finished && (!c.activity || c.activity.leadId !== c.leadId || c.activity.type !== "CALL")) v.push(`${label} (${c.status}) is not logged on the lead timeline`);
+      if (!finished && c.activity) v.push(`${label} (${c.status}) is logged although it never finished`);
+      if (c.status !== "COMPLETED" && c._count.insights > 0) v.push(`${label} has insights but never connected`);
+    }
+    add("call-logging", "Every finished call is logged once on its own lead; insights exist only for connected calls", v);
+  }
+
   return checks;
 }

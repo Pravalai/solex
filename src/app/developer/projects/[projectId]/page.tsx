@@ -47,7 +47,7 @@ export default async function DeveloperProject({ params }: PageProps<"/developer
         }
       />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <Section title="Inventory" description="Full project, including units you have retained outside the soleX mandate" actions={<StatusLegend />}>
+        <Section title="Inventory (incl. retained units)" actions={<StatusLegend />}>
           <StackingPlan towers={plan.towers} />
         </Section>
         {m && (
@@ -67,7 +67,7 @@ export default async function DeveloperProject({ params }: PageProps<"/developer
         )}
       </div>
 
-      <Section title="Bookings" description="Every booking on your project. Customer contact details stay with the soleX team." className="mt-5">
+      <Section title="Bookings" className="mt-5">
         <div className="-mx-4 overflow-x-auto">
           <Table>
             <TableHeader>
@@ -110,7 +110,7 @@ export default async function DeveloperProject({ params }: PageProps<"/developer
         </div>
       </Section>
 
-      <Section title="soleX fee statement" description="What you owe soleX under this mandate. Each line becomes payable once its booking reaches the collection trigger." className="mt-5">
+      <Section title="soleX fee statement" description="Payable once each booking reaches the collection trigger." className="mt-5">
         <CommissionTable lines={fees} labels={{ DEVELOPER_FEE: "soleX fee" }} />
       </Section>
     </>

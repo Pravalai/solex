@@ -13,7 +13,7 @@ export default async function BrokerProjects() {
   const { projects } = await getBrokerHome(actor);
   return (
     <>
-      <PageHeader title="Projects" subtitle="Live availability and current price lists for the projects you are authorised on." />
+      <PageHeader title="Projects" />
       <div className="grid gap-3 sm:grid-cols-2">
         {projects.map((p) => (
           <Link key={p.id} href={`/broker/projects/${p.id}`} className="flex items-center gap-3 rounded-xl border bg-card p-4 shadow-xs hover:bg-muted/40">

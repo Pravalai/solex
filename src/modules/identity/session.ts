@@ -25,7 +25,13 @@ export const getActor = cache(async (): Promise<Actor | null> => {
 
 export async function requireActor(opts: { roles?: Role[]; permission?: Permission } = {}): Promise<Actor> {
   const actor = await getActor();
-  if (!actor) redirect("/login");
+  if (!actor) {
+    // A correctly signed cookie whose user no longer exists or is inactive (e.g. after
+    // `demo:reset` recreated the users). The proxy would bounce a plain /login straight
+    // back here, so ask it to clear the cookie instead.
+    const stale = (await cookies()).has(SESSION_COOKIE);
+    redirect(stale ? "/login?expired=1" : "/login");
+  }
   if ((opts.roles && !opts.roles.includes(actor.role)) || (opts.permission && !can(actor, opts.permission))) {
     redirect(homePathFor(actor.role));
   }

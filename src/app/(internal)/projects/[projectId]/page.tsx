@@ -74,8 +74,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Section
-          title="Stacking plan"
-          description="Click a unit for pricing, history and actions. Status is live; holds lapse automatically."
+          title="Stacking plan · click a unit"
           actions={<StatusLegend />}
         >
           <StackingPlan towers={plan.towers} hrefFor={(u) => withLead({ unit: u.id })} selectedId={unitId} />

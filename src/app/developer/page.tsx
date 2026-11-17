@@ -21,9 +21,7 @@ export default async function DeveloperHome() {
   return (
     <>
       <PageHeader
-        eyebrow="Mandated to soleX"
         title="Your projects"
-        subtitle="Live sales, collections and soleX fees for every project you have mandated to soleX."
         actions={
           pending > 0 && (
             <Button asChild>

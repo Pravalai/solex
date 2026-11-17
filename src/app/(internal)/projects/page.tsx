@@ -14,11 +14,7 @@ export default async function ProjectsPage() {
   const projects = await listProjects(actor);
   return (
     <>
-      <PageHeader
-        eyebrow="Mandates"
-        title="Projects & inventory"
-        subtitle="Every project soleX sells under an active mandate, with the appointed inventory and its absorption."
-      />
+      <PageHeader title="Projects & inventory" />
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {projects.map((p) => {
           const absorbed = p.absorbed ?? 0;
